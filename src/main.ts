@@ -1,14 +1,16 @@
 import { createRouter, createMemoryHistory } from "vue-router";
+import { routes, handleHotUpdate } from 'vue-router/auto-routes';
 import { createApp } from "vue";
 
-import Home from "./pages/Home.vue";
 import App from "./App.vue";
 
 const router = createRouter({
   history: createMemoryHistory(),
-  routes: [
-    { path: "/", component: Home },
-  ],
+  routes,
 });
+
+if (import.meta.hot) {
+  handleHotUpdate(router) 
+}
 
 createApp(App).use(router).mount("#app");
