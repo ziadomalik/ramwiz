@@ -1,13 +1,19 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import vueRouter from 'unplugin-vue-router/vite';
+import ui from '@nuxt/ui/vite';
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [vueRouter(), vue()],
+  plugins: [vueRouter(), vue(), ui()],
+
+  // Suppress Tailwind CSS v4 source map warnings
+  css: {
+    devSourcemap: false,
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
