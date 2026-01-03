@@ -8,7 +8,18 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [vueRouter(), vue(), ui()],
+  plugins: [
+    vueRouter(), 
+    vue(), 
+    ui({
+      ui: {
+        colors: {
+          primary: 'blue',
+          neutral: 'zinc'
+        }
+      }
+    })
+  ],
 
   // Suppress Tailwind CSS v4 source map warnings
   css: {
