@@ -7,7 +7,7 @@ const value = ref<File | null>(null);
 <template>
   <div class="flex flex-col items-center justify-center h-screen">
     <div class="div w-full max-w-sm">
-      <UFileUpload v-model="value" class="w-96 min-h-48" />
+      <UFileUpload v-model="value" class="w-96 min-h-48" layout="list" />
       <UButton block class="mt-4" icon="i-lucide-upload" :disabled="!value" size="lg">Load Trace</UButton>
     </div>
   </div>
