@@ -7,7 +7,12 @@ async fn load_trace(path: String) -> Result<u64, String> {
     let result = tokio::task::spawn_blocking(move || {
         println!("Loading trace from {}", path);
         let mut trace_loader = trace::TraceLoader::new();
-        trace_loader.open(path).map(|meta| meta.total_events)
+        trace_loader.open(path).map(|meta| {
+            println!("Total events: {}", meta.total_events);
+            println!("Total file size: {}", meta.file_size);
+            println!("Time range: {:?}", meta.time_range);
+            meta.total_events
+        })
     })
     .await
     .map_err(|e| e.to_string())?;
