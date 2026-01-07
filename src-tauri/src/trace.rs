@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use memchr::memchr_iter;
 use memmap2::Mmap;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct TraceMetadata {
     pub time_range: (u64, u64), // (min_clk, max_clk)
     pub total_events: u64,
