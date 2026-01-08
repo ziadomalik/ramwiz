@@ -71,7 +71,7 @@ impl TraceLoader {
         self.line_index = index;
 
         let meta = TraceMetadata {
-            total_events: line_count.saturating_sub(1), // -1 for header row
+            total_events: line_count,
             time_range: self.get_clk_range().unwrap_or((0, 0)),
             file_size,
         };
