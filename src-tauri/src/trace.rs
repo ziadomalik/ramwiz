@@ -15,6 +15,8 @@ use std::path::PathBuf;
 use memchr::memchr_iter;
 use memmap2::Mmap;
 
+use crate::csv::CSVLine;
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct TraceMetadata {
     pub time_range: (u64, u64), // (min_clk, max_clk)
@@ -70,11 +72,64 @@ impl TraceLoader {
 
         let meta = TraceMetadata {
             total_events: line_count.saturating_sub(1), // -1 for header row
-            time_range: (0, 0), // TODO: Scan first and last line to get the range.
+            time_range: self.get_clk_range().unwrap_or((0, 0)),
             file_size,
         };
 
         self.metadata = Some(meta.clone());
         Ok(meta)
+    }
+
+    /// Get the byte slice for a line starting at 'start' offset.
+    /// Returns bytes up to (but not including) the newline.
+    fn get_line_bytes(&self, start: usize) -> Option<&[u8]> {
+        let mmap = self.mmap.as_ref()?;
+        if start >= mmap.len() {
+            return None;
+        }
+        let remaining = &mmap[start..];
+        let end = remaining
+            .iter()
+            .position(|&b| b == b'\n')
+            .unwrap_or(remaining.len());
+        Some(&remaining[..end])
+    }
+
+    /// Get a CSVLine view starting at byte offset.
+    fn get_line_at(&self, start: usize) -> Option<CSVLine<'_>> {
+        self.get_line_bytes(start).map(CSVLine::new)
+    }
+
+    fn find_last_line_start(&self) -> Option<usize> {
+        let mmap = self.mmap.as_ref()?;
+        if mmap.is_empty() {
+            return None;
+        }
+
+        let mut pos = mmap.len() - 1;
+
+        // Skip trailing newline
+        if mmap[pos] == b'\n' {
+            pos = pos.saturating_sub(1);
+        }
+
+        // Scan backwards to previous newline
+        while pos > 0 && mmap[pos] != b'\n' {
+            pos -= 1;
+        }
+
+        Some(if mmap[pos] == b'\n' { pos + 1 } else { 0 })
+    }
+
+    fn get_clk_range(&self) -> Option<(u64, u64)> {
+        let last_line_start = self.find_last_line_start()?;
+        let last_line = self.get_line_at(last_line_start)?;
+        let last_clk = last_line.get_field::<u64>(0)?;
+
+        let first_line_start = self.line_index[0] as usize;
+        let first_line = self.get_line_at(first_line_start)?;
+        let first_clk = first_line.get_field::<u64>(0)?;
+
+        Some((first_clk, last_clk))
     }
 }

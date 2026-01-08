@@ -1,5 +1,6 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 
+mod csv;
 mod trace;
 
 #[tauri::command]
@@ -7,11 +8,10 @@ async fn load_trace(path: String) -> Result<trace::TraceMetadata, String> {
     let result = tokio::task::spawn_blocking(move || {
         println!("Loading trace from {}", path);
         let mut trace_loader = trace::TraceLoader::new();
-        trace_loader.open(path).map(|meta| {
+        trace_loader.open(path).inspect(|meta| {
             println!("Total events: {}", meta.total_events);
             println!("Total file size: {}", meta.file_size);
             println!("Time range: {:?}", meta.time_range);
-            meta
         })
     })
     .await
