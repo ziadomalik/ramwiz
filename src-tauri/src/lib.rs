@@ -11,7 +11,7 @@ async fn load_trace(path: String) -> Result<trace::TraceMetadata, String> {
         trace_loader.open(path).inspect(|meta| {
             println!("Total events: {}", meta.total_events);
             println!("Total file size: {}", meta.file_size);
-            println!("Time range: {:?}", meta.time_range);
+            println!("Time range: {:?}", meta.clk_range);
         })
     })
     .await

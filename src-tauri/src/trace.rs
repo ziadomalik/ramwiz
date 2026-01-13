@@ -19,7 +19,8 @@ use crate::csv::CSVLine;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct TraceMetadata {
-    pub time_range: (u64, u64), // (min_clk, max_clk)
+    // (min_clk, max_clk)
+    pub clk_range: (u64, u64),
     pub total_events: u64,
     pub file_size: u64,
 }
@@ -72,7 +73,7 @@ impl TraceLoader {
 
         let meta = TraceMetadata {
             total_events: line_count,
-            time_range: self.get_clk_range().unwrap_or((0, 0)),
+            clk_range: self.get_clk_range().unwrap_or((0, 0)),
             file_size,
         };
 

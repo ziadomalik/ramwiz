@@ -21,8 +21,8 @@ export const openFileDialogForTraceFiles = async (): Promise<string | null> => {
 }
 
 export interface TraceMetadata {
+  clk_range: [number, number];
   total_events: number;
-  time_range: [number, number];
   file_size: number;
 };
 
