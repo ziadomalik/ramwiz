@@ -7,6 +7,10 @@
 // License: MIT
 // -----
 
+// TODO: Keep an eye on Specta, if it gets more stable, we can use it to generate the bindings automatically:
+// https://docs.rs/tauri-specta/2.0.0-rc.21/tauri_specta/
+// Then we don't need to manually define the types here and use invoke<T> directly.
+
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
