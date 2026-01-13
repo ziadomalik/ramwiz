@@ -2,19 +2,16 @@
 import { ref } from "vue";
 import { useRouter } from "vue-router";
 
-import { invoke } from "@tauri-apps/api/core";
+import { loadTrace } from "../backend";
 import TraceFileUpload from "../components/TraceFileUpload.vue";
 
-import type { TraceMetadata } from "../types";
-
 const router = useRouter();
-
 const loading = ref(false);
 
-const loadTrace = async (path: string) => {
+const handleLoadTrace = async (path: string) => {
   loading.value = true;
   try {
-    const metadata = await invoke<TraceMetadata>("load_trace", { path });
+    const metadata = await loadTrace(path);
     // TODO: Look into introducing global state management instead of using query parameters.
     router.push({ path: "/trace", query: { metadata: JSON.stringify(metadata) } });
   } catch (error) {
@@ -27,6 +24,6 @@ const loadTrace = async (path: string) => {
 
 <template>
   <div class="flex flex-col items-center justify-center h-screen">
-    <TraceFileUpload :loading="loading" @loadTrace="loadTrace" />
+    <TraceFileUpload :loading="loading" @loadTrace="handleLoadTrace" />
   </div>
 </template>

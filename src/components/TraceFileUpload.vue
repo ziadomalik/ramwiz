@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { open } from "@tauri-apps/plugin-dialog";
+import { openFileDialogForTraceFiles } from "../backend";
 
 const toast = useToast();
 
@@ -16,13 +16,9 @@ const selectedPath = ref<string | null>(null);
 
 const selectFile = async () => {
   try {
-    const path = await open({
-      multiple: false,
-      directory: false,
-      filters: [{ name: "Trace Files", extensions: ["*"] }],
-    });
+    const path = await openFileDialogForTraceFiles();
 
-    if (typeof path === "string") {
+    if (path) {
       selectedPath.value = path;
     }
   } catch (error) {

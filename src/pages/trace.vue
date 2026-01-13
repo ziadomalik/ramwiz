@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRoute } from "vue-router";
-import type { TraceMetadata } from "../types";
+import type { TraceMetadata } from "../backend";
 
 const route = useRoute();
 const metadata = JSON.parse(route.query.metadata as string) as TraceMetadata;
