@@ -1,5 +1,5 @@
 <template>
   <UApp>
-    <RouterView />
+    <NuxtPage />
   </UApp>
 </template>

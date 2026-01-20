@@ -1,20 +1,22 @@
 {
-  "$schema": "https://schema.tauri.app/config/2",
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "ramwiz",
   "version": "0.1.0",
   "identifier": "com.ziadmalik.ramwiz",
   "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:3000",
     "beforeDevCommand": "pnpm dev",
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
-    "frontendDist": "../dist"
+    "beforeBuildCommand": "pnpm generate"
   },
   "app": {
     "windows": [
       {
-        "title": "Ramwiz - Trace visualizer for Ramulator 2.0",
+        "title": "ramwiz - Tracevisualizer for Ramulator 2",
         "width": 1200,
-        "height": 600
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false
       }
     ],
     "security": {
