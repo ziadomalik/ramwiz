@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "ramwiz - Tracevisualizer for Ramulator 2",
+        "title": "ramwiz - A simple trace visualizer for Ramulator 2",
         "width": 1200,
         "height": 800,
         "resizable": true,

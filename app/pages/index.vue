@@ -1,10 +1,5 @@
 <template>
-  <div>Count: {{ count }}</div>
-  <UButton @click="count++">Click me</UButton>
+  <main class="min-h-screen flex items-center justify-center w-full">
+    <TraceUpload />
+  </main>
 </template>
-
-<script setup lang="ts">
-import { ref } from 'vue';
-
-const count = ref(0);
-</script>
