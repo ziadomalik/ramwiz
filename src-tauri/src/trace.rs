@@ -108,19 +108,101 @@ fn parse(mmap: &Mmap) -> Result<Header, HeaderError> {
   Ok(*header)
 }
 
+/// Dictionary maps command IDs to their string names.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Dictionary {
+  pub commands: std::collections::HashMap<u8, String>,
+}
+
+#[derive(Debug)]
+pub enum DictionaryError {
+  OffsetOutOfBounds,
+  InvalidFormat,
+  Utf8Error(std::str::Utf8Error),
+}
+
+impl Error for DictionaryError {}
+
+impl fmt::Display for DictionaryError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      DictionaryError::OffsetOutOfBounds => write!(f, "dictionary offset out of bounds"),
+      DictionaryError::InvalidFormat => write!(f, "invalid dictionary format"),
+      DictionaryError::Utf8Error(e) => write!(f, "UTF-8 error: {}", e),
+    }
+  }
+}
+
+impl From<DictionaryError> for std::io::Error {
+  fn from(err: DictionaryError) -> Self {
+    std::io::Error::new(std::io::ErrorKind::InvalidData, err.to_string())
+  }
+}
+
+/// Parses the dictionary section from the mmap.
+/// Dictionary format: [num_commands: u8] then for each command: [len: u8][name: bytes] starting from dict_offset
+fn parse_dictionary(mmap: &Mmap, dict_offset: u64, num_commands: u8) -> Result<Dictionary, DictionaryError> {
+  let data = mmap.as_ref();
+  let offset = dict_offset as usize;
+
+  if offset >= data.len() {
+    return Err(DictionaryError::OffsetOutOfBounds);
+  }
+
+  let mut commands = std::collections::HashMap::new();
+  let mut pos = offset;
+
+  for cmd_id in 0..num_commands {
+    if pos >= data.len() {
+      return Err(DictionaryError::OffsetOutOfBounds);
+    }
+
+    if pos >= data.len() {
+      return Err(DictionaryError::OffsetOutOfBounds);
+    }
+
+    let str_len = data[pos] as usize;
+    pos += 1;
+
+    if pos + str_len > data.len() {
+      return Err(DictionaryError::OffsetOutOfBounds);
+    }
+
+    let name = std::str::from_utf8(&data[pos..pos + str_len])
+      .map_err(DictionaryError::Utf8Error)?
+      .to_string();
+    pos += str_len;
+
+    commands.insert(cmd_id, name);
+  }
+
+  Ok(Dictionary { commands })
+}
+
 pub struct TraceLoader {
   mmap: Mmap,
+  header: Header,
 }
 
 impl TraceLoader {
   pub fn new(path: PathBuf) -> Result<Self, std::io::Error> {
     let file = File::open(path)?;
     let mmap = unsafe { Mmap::map(&file)? };
+    let header = parse(&mmap)?;
 
-    Ok(Self { mmap })
+    Ok(Self { mmap, header })
   }
 
-  pub fn parse_header(&self) -> Result<Header, std::io::Error> {
-    parse(&self.mmap).map_err(Into::into)
+  pub fn header(&self) -> &Header {
+    &self.header
+  }
+
+  pub fn parse_dictionary(&self) -> Result<Dictionary, std::io::Error> {
+    parse_dictionary(&self.mmap, self.header.dict_offset(), self.header.num_commands)
+      .map_err(Into::into)
+  }
+
+  pub fn data(&self) -> &[u8] {
+    self.mmap.as_ref()
   }
 }
