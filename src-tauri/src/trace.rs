@@ -34,6 +34,8 @@ pub use dictionary::Dictionary;
 pub use entry::Entry;
 pub use header::Header;
 
+use zerocopy::Ref;
+
 pub struct TraceLoader {
     mmap: Mmap,
     header: Header,
@@ -63,5 +65,21 @@ impl TraceLoader {
 
     pub fn load_entry(&self, index: u64) -> Result<Entry, std::io::Error> {
         entry::parse(&self.mmap, &self.header, index).map_err(Into::into)
+    }
+
+    pub fn load_entry_slice(&self, start: u64, count: usize) -> Result<&[Entry], std::io::Error> {
+        let start_offset = std::mem::size_of::<Header>() + (start as usize * std::mem::size_of::<Entry>());
+        let end_offset = start_offset + (count * std::mem::size_of::<Entry>());
+
+        if end_offset > self.mmap.len() {
+            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Out of bounds"));
+        }
+
+        let slice = &self.mmap[start_offset..end_offset];
+        
+        let (entries, _) = Ref::<&[u8], [Entry]>::from_prefix_with_elems(slice, count)
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "Cast failed"))?;
+
+        Ok(Ref::into_ref(entries))
     }
 }

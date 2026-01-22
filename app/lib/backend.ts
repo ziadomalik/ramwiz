@@ -79,3 +79,16 @@ export async function loadCommandConfig(): Promise<CommandConfig | null> {
   const store = await load(STORE_PATH, { defaults: {}, autoSave: false });
   return await store.get('commandConfig') ?? null as CommandConfig | null;
 }
+
+// TRACE VIEW //
+
+export interface EntryRangeSoA {
+  starts: number[];
+  durations: number[];
+  rows: number[];
+  colors: number[];
+}
+
+export async function getTraceView(start: number, count: number): Promise<EntryRangeSoA> {
+  return invoke<EntryRangeSoA>('get_trace_view', { start, count });
+}

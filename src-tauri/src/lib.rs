@@ -1,15 +1,22 @@
 mod trace;
+mod user_data;
 
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 /// Holds the current session state i.e. the loaded trace file and its parsed data.
-pub struct SessionState(Mutex<Option<trace::TraceLoader>>);
+pub struct SessionState {
+    pub loader: Mutex<Option<trace::TraceLoader>>,
+    pub config: Mutex<Option<user_data::CommandConfig>>,
+}
 
 impl SessionState {
     pub fn new() -> Self {
-        Self(Mutex::new(None))
+        Self {
+            loader: Mutex::new(None),
+            config: Mutex::new(None),
+        }
     }
 }
 
@@ -21,15 +28,23 @@ impl Default for SessionState {
 
 #[tauri::command]
 fn load_trace(
+    app: AppHandle,
     path: String,
     session: State<'_, SessionState>,
 ) -> Result<trace::header::Header, String> {
     let loader = trace::TraceLoader::new(PathBuf::from(path)).map_err(|e| e.to_string())?;
 
     let header = *loader.header();
+    {
+        let mut guard = session.loader.lock().map_err(|e| e.to_string())?;
+        *guard = Some(loader);
+    }
 
-    let mut guard = session.0.lock().map_err(|e| e.to_string())?;
-    *guard = Some(loader);
+    let config = user_data::load_command_config(&app)?;
+    {
+        let mut guard = session.config.lock().map_err(|e| e.to_string())?;
+        *guard = config;
+    }
 
     Ok(header)
 }
@@ -38,7 +53,7 @@ fn load_trace(
 fn load_dictionary(
     session: State<'_, SessionState>,
 ) -> Result<trace::dictionary::Dictionary, String> {
-    let guard = session.0.lock().map_err(|e| e.to_string())?;
+    let guard = session.loader.lock().map_err(|e| e.to_string())?;
 
     let loader = guard
         .as_ref()
@@ -48,19 +63,41 @@ fn load_dictionary(
 }
 
 #[tauri::command]
-fn load_entry(
-    index: u64,
+fn get_trace_view(
+    app: AppHandle,
+    start: u64,
+    count: u64,
     session: State<'_, SessionState>,
-) -> Result<trace::entry::Entry, String> {
-    let guard = session.0.lock().map_err(|e| e.to_string())?;
-    let loader = guard.as_ref().ok_or_else(|| "No trace loaded. Call load_trace first.".to_string())?;
-    loader.load_entry(index).map_err(|e| e.to_string())
+) -> Result<trace::entry::EntryRangeSoA, String> {
+    // Refresh the command config, just in case one changes the clock periods after loading the trace.
+    // TODO(ziad): Figure out if loading the config with each invocation is the best way to do this.
+    let config = user_data::load_command_config(&app)?;
+    {
+        let mut guard = session.config.lock().map_err(|e| e.to_string())?;
+        *guard = config;
+    }
+
+    let loader_guard = session.loader.lock().map_err(|e| e.to_string())?;
+    let loader = loader_guard.as_ref().ok_or_else(|| "No trace loaded".to_string())?;
+
+    let config_guard = session.config.lock().map_err(|e| e.to_string())?;
+    let config = config_guard.as_ref().ok_or_else(|| "No config loaded".to_string())?;
+
+    let entries = loader.load_entry_slice(start, count as usize).map_err(|e| e.to_string())?;
+
+    Ok(trace::entry::get_entry_range_soa(entries, config))
 }
 
 #[tauri::command]
 fn close_session(session: State<'_, SessionState>) -> Result<(), String> {
-    let mut guard = session.0.lock().map_err(|e| e.to_string())?;
-    *guard = None;
+    {
+        let mut guard = session.loader.lock().map_err(|e| e.to_string())?;
+        *guard = None;
+    }
+    {
+        let mut guard = session.config.lock().map_err(|e| e.to_string())?;
+        *guard = None;
+    }
     Ok(())
 }
 
@@ -68,7 +105,7 @@ fn close_session(session: State<'_, SessionState>) -> Result<(), String> {
 fn get_session_info(
     session: State<'_, SessionState>,
 ) -> Result<Option<trace::header::Header>, String> {
-    let guard = session.0.lock().map_err(|e| e.to_string())?;
+    let guard = session.loader.lock().map_err(|e| e.to_string())?;
     Ok(guard.as_ref().map(|loader| *loader.header()))
 }
 
@@ -82,9 +119,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             load_trace,
             load_dictionary,
-            load_entry,
             close_session,
-            get_session_info
+            get_session_info,
+            get_trace_view
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

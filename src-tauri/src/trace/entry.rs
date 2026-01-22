@@ -38,6 +38,8 @@ use zerocopy::byteorder::little_endian::I16 as LeI16;
 use zerocopy::byteorder::little_endian::I32 as LeI32;
 use zerocopy::byteorder::little_endian::I64 as LeI64;
 
+use crate::user_data::CommandConfig;
+
 use crate::trace::header::Header;
 
 use crate::trace::serialize::{
@@ -134,4 +136,61 @@ pub fn parse(mmap: &Mmap, header: &Header, index: u64) -> Result<Entry, EntryErr
     }
 
     Ok(*entry)
+}
+
+/// A range of entries in a format that's friendly to WebGL
+#[derive(Serialize, Deserialize)]
+pub struct EntryRangeSoA {
+    pub starts: Vec<f32>,
+    pub durations: Vec<f32>,
+    pub rows: Vec<f32>,
+    pub colors: Vec<f32>,
+}
+
+pub fn get_entry_range_soa(entries: &[Entry], config: &CommandConfig) -> EntryRangeSoA {
+    let n = entries.len();
+    let mut starts = Vec::with_capacity(n);
+    let mut durations = Vec::with_capacity(n);
+    let mut rows = Vec::with_capacity(n);
+    let mut colors = Vec::with_capacity(n * 3);
+
+        for entry in entries {
+
+        starts.push(entry.clk.get() as f32);
+        rows.push(entry.row.get() as f32);
+
+        let cmd = entry.cmd_id;
+        let duration = config.clock_periods.get(&cmd).copied().unwrap_or(10.0);
+        durations.push(duration);
+
+        if let Some(hex) = config.colors.get(&cmd) {
+            let (r, g, b) = parse_color(hex);
+            colors.push(r);
+            colors.push(g);
+            colors.push(b);
+        } else {
+            // Default Grey
+            colors.push(0.5);
+            colors.push(0.5);
+            colors.push(0.5);
+        }
+    }
+
+    EntryRangeSoA {
+        starts,
+        durations,
+        rows,
+        colors,
+    }
+}
+
+fn parse_color(hex: &str) -> (f32, f32, f32) {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 {
+        return (0.5, 0.5, 0.5);
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as f32 / 255.0;
+    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as f32 / 255.0;
+    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as f32 / 255.0;
+    (r, g, b)
 }
