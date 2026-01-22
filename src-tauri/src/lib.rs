@@ -48,6 +48,16 @@ fn load_dictionary(
 }
 
 #[tauri::command]
+fn load_entry(
+    index: u64,
+    session: State<'_, SessionState>,
+) -> Result<trace::entry::Entry, String> {
+    let guard = session.0.lock().map_err(|e| e.to_string())?;
+    let loader = guard.as_ref().ok_or_else(|| "No trace loaded. Call load_trace first.".to_string())?;
+    loader.load_entry(index).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn close_session(session: State<'_, SessionState>) -> Result<(), String> {
     let mut guard = session.0.lock().map_err(|e| e.to_string())?;
     *guard = None;
@@ -72,6 +82,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             load_trace,
             load_dictionary,
+            load_entry,
             close_session,
             get_session_info
         ])

@@ -1,4 +1,3 @@
-use std::error::Error;
 /// The file format implements utilities for parsing and managing the header of a memory trace file.
 ///
 ///  Layout:
@@ -19,7 +18,7 @@ use std::error::Error;
 /// Author: Ziad Malik
 /// Email: zmalik@ethz.ch
 /// ----
-
+use std::error::Error;
 use std::fmt;
 
 use memmap2::Mmap;
@@ -27,24 +26,10 @@ use serde::{Deserialize, Serialize};
 use zerocopy::byteorder::little_endian::U64 as LeU64;
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned};
 
+use crate::trace::serialize::{deserialize_leu64, serialize_leu64};
+
 const SUPPORTED_VERSION: u8 = 1;
 const MAGIC: [u8; 5] = *b"RAM2\0";
-
-/// Helpers to serialize zerocopy types to/from JSON, needed for tauri commands.
-fn serialize_leu64<S>(value: &LeU64, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    serializer.serialize_u64(value.get())
-}
-
-fn deserialize_leu64<'de, D>(deserializer: D) -> Result<LeU64, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = u64::deserialize(deserializer)?;
-    Ok(LeU64::new(value))
-}
 
 #[derive(
     FromBytes, Unaligned, KnownLayout, Immutable, Debug, Copy, Clone, Serialize, Deserialize,
@@ -68,6 +53,14 @@ pub struct Header {
 }
 
 impl Header {
+    pub fn num_commands(&self) -> u8 {
+        self.num_commands
+    }
+
+    pub fn num_entries(&self) -> u64 {
+        self.num_entries.get()
+    }
+
     pub fn dict_offset(&self) -> u64 {
         self.dict_offset.get()
     }

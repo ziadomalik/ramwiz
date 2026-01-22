@@ -1,4 +1,3 @@
-use std::error::Error;
 /// The file format implements utilities for parsing and managing the dictionary of a memory trace file.
 /// The dictionary is a mapping of integers to memory command strings. The idea is to not have to store
 /// the strings of the commands for each entry in the trace file, of which there can be literally millions.
@@ -17,7 +16,7 @@ use std::error::Error;
 /// Author: Ziad Malik
 /// Email: zmalik@ethz.ch
 /// ----
-
+use std::error::Error;
 use std::fmt;
 
 use memmap2::Mmap;

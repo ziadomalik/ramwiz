@@ -21,15 +21,17 @@
 /// Author: Ziad Malik
 /// Email: zmalik@ethz.ch
 /// ----
-
 use memmap2::Mmap;
 use std::fs::File;
 use std::path::PathBuf;
 
 pub mod dictionary;
+pub mod entry;
 pub mod header;
+pub mod serialize;
 
 pub use dictionary::Dictionary;
+pub use entry::Entry;
 pub use header::Header;
 
 pub struct TraceLoader {
@@ -57,5 +59,9 @@ impl TraceLoader {
             self.header.num_commands,
         )
         .map_err(Into::into)
+    }
+
+    pub fn load_entry(&self, index: u64) -> Result<Entry, std::io::Error> {
+        entry::parse(&self.mmap, &self.header, index).map_err(Into::into)
     }
 }
