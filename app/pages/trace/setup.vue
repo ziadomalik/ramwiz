@@ -26,8 +26,8 @@
           </template>
         </UInput>
       </div>
-      <UButton class="w-full flex items-center justify-center" trailing-icon="i-lucide-arrow-right" @click="onContinue"
-        :disabled="pending" :loading="pending" size="lg" square>
+      <UButton :disabled="disableButton" class="w-full flex items-center justify-center" trailing-icon="i-lucide-arrow-right" @click="onContinue"
+        :loading="pending" size="lg" square>
         Continue
       </UButton>
     </div>
@@ -35,6 +35,7 @@
 </template>
 <script setup lang="ts">
 import { loadDictionaryHandler } from '@/lib/backend';
+import type { CommandConfig } from '@/lib/backend';
 
 const COLORS = [
   '#A8D8EA', '#FFCAB1', '#B5EAD7', '#E2B6CF',
@@ -45,6 +46,8 @@ const COLORS = [
 
 const commandColors = reactive<Record<number, string>>({});
 const clockPeriods = reactive<Record<number, number | undefined>>({});
+
+const disableButton = computed(() => (Object.keys(clockPeriods).length !== Object.keys(dictionary.value).length) || pending.value);
 
 const sessionStore = useSessionStore();
 const dictionary = computed(() => sessionStore.dictionary?.commands ?? {});
@@ -57,18 +60,25 @@ const { pending } = await useAsyncData('dictionary', async () => {
   const dictionary = await loadDictionaryHandler();
   sessionStore.setDictionary(dictionary);
 
+  const savedConfig = await sessionStore.loadSavedCommandConfig();
+
   Object.keys(dictionary.commands).forEach((id, index) => {
     const numId = Number(id);
-    commandColors[numId] = COLORS[index % COLORS.length] ?? '#CCCCCC';
-    clockPeriods[numId] = undefined;
+    commandColors[numId] = savedConfig?.colors[numId] ?? COLORS[index % COLORS.length] ?? '#CCCCCC';
+    clockPeriods[numId] = savedConfig?.clockPeriods[numId] ?? undefined;
   });
 
   return dictionary;
 });
 
-const onContinue = () => {
-  // TODO: Save config and navigate to next step
-  console.log('Colors:', commandColors);
-  console.log('Clock periods:', clockPeriods);
+const onContinue = async() => {
+  const config: CommandConfig = {
+    colors: { ...commandColors },
+    clockPeriods: { ...clockPeriods },
+  };
+
+  await sessionStore.setCommandConfig(config);
+
+  navigateTo('/trace/view');
 };
 </script>

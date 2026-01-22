@@ -5,22 +5,32 @@
 /// ----
 
 import { defineStore } from 'pinia';
-import type { Header, Dictionary } from '@/lib/backend';
-import { closeSessionHandler } from '@/lib/backend';
+import type { Header, Dictionary, CommandConfig } from '@/lib/backend';
+import { closeSessionHandler, loadCommandConfig, saveCommandConfig } from '@/lib/backend';
 
 export const useSessionStore = defineStore('session', {
   state: () => ({
     header: null as Header | null,
     dictionary: null as Dictionary | null,
+    commandConfig: null as CommandConfig | null,
   }),
 
   getters: {
     hasHeader: (state): boolean => state.header !== null,
     hasDictionary: (state): boolean => state.dictionary !== null,
+    hasCommandConfig: (state): boolean => state.commandConfig !== null,
     isReady: (state): boolean => state.header !== null && state.dictionary !== null,
     
     getCommandName: (state) => (commandId: number): string | undefined => {
       return state.dictionary?.commands[commandId];
+    },
+
+    getCommandColor: (state) => (commandId: number): string | undefined => {
+      return state.commandConfig?.colors[commandId];
+    },
+
+    getCommandClockPeriod: (state) => (commandId: number): number | undefined => {
+      return state.commandConfig?.clockPeriods[commandId];
     },
   },
 
@@ -31,6 +41,16 @@ export const useSessionStore = defineStore('session', {
 
     setDictionary(dictionary: Dictionary) {
       this.dictionary = dictionary;
+    },
+
+    async setCommandConfig(config: CommandConfig) {
+      this.commandConfig = config;
+      await saveCommandConfig(config);
+    },
+
+    async loadSavedCommandConfig(): Promise<CommandConfig | null> {
+      this.commandConfig= await loadCommandConfig();
+      return this.commandConfig;
     },
 
     async close() {

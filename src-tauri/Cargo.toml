@@ -27,3 +27,4 @@ memmap2 = "0.9.9"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 zerocopy = { version = "0.8.33", features = ["derive"] }
+tauri-plugin-store = "2"

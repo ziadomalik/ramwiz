@@ -21,25 +21,24 @@ impl Default for SessionState {
 
 #[tauri::command]
 fn load_trace(path: String, session: State<'_, SessionState>) -> Result<trace::Header, String> {
-    let loader = trace::TraceLoader::new(PathBuf::from(path))
-        .map_err(|e| e.to_string())?;
-    
+    let loader = trace::TraceLoader::new(PathBuf::from(path)).map_err(|e| e.to_string())?;
+
     let header = *loader.header();
-    
+
     let mut guard = session.0.lock().map_err(|e| e.to_string())?;
     *guard = Some(loader);
-    
+
     Ok(header)
 }
 
 #[tauri::command]
 fn load_dictionary(session: State<'_, SessionState>) -> Result<trace::Dictionary, String> {
     let guard = session.0.lock().map_err(|e| e.to_string())?;
-    
+
     let loader = guard
         .as_ref()
         .ok_or_else(|| "No trace loaded. Call load_trace first.".to_string())?;
-    
+
     loader.parse_dictionary().map_err(|e| e.to_string())
 }
 
@@ -59,6 +58,7 @@ fn get_session_info(session: State<'_, SessionState>) -> Result<Option<trace::He
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(SessionState::new())

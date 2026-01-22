@@ -1,8 +1,10 @@
 import type { FileInfo } from '@tauri-apps/plugin-fs';
 import { open } from '@tauri-apps/plugin-dialog';
 import { stat } from '@tauri-apps/plugin-fs';
-
 import { invoke } from '@tauri-apps/api/core';
+import { load } from '@tauri-apps/plugin-store';
+
+// TRACE & DICTIONARY LOADING & MANAGEMENT //
 
 export interface Header {
   magic: number[];
@@ -36,6 +38,8 @@ export async function getSessionInfoHandler(): Promise<Header | null> {
   return invoke<Header | null>('get_session_info');
 }
 
+// FILE DIALOG //
+
 export type FileMetadata = FileInfo & { name: string, path: string };
 
 export async function loadTraceDialog(): Promise<FileMetadata | null> {
@@ -55,4 +59,23 @@ export async function loadTraceDialog(): Promise<FileMetadata | null> {
   const name = filePath.replace(/\\/g, '/').split('/').pop() ?? '';
 
   return { ...(await stat(filePath)), name, path };
+}
+
+// USER DATA //
+
+export interface CommandConfig {
+  colors: Record<number, string>;
+  clockPeriods: Record<number, number | undefined>;
+}
+
+const STORE_PATH = "ramwiz-config.json";
+
+export async function saveCommandConfig(config: CommandConfig): Promise<void> {
+  const store = await load(STORE_PATH, { defaults: {}, autoSave: true });
+  await store.set('commandConfig', config);
+}
+
+export async function loadCommandConfig(): Promise<CommandConfig | null> {
+  const store = await load(STORE_PATH, { defaults: {}, autoSave: false });
+  return await store.get('commandConfig') ?? null as CommandConfig | null;
 }
