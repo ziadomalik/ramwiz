@@ -1,17 +1,12 @@
 <template>
   <div class="min-h-screen flex flex-col items-center justify-center">
     <div class="w-md space-y-3">
-    <pre>
-      Parsed header:
-      ----------------------------
-      Magic: {{ sessionStore.header?.magic?.map((n: number) => String.fromCharCode(n)).join('') }}
-      Version: {{ sessionStore.header?.version }}
-      Number of commands: {{ Object.keys(dictionary).length }}
-      Dictionary offset: {{ sessionStore.header?.dict_offset }}
-      Number of entries: {{ sessionStore.header?.num_entries }}
-      ----------------------------
-    </pre>
-      <div v-for="(command, id) in dictionary" :key="id" class="flex items-center justify-between gap-4 p-3 rounded-lg transition-colors border border-neutral-200">
+      <div>
+        <h1 class="text-3xl font-bold">Command Setup</h1>
+        <p class="text-sm text-gray-500">Please provide a clock period for each command.</p>
+      </div>
+      <div v-for="(command, id) in dictionary" :key="id"
+        class="flex items-center justify-between gap-4 p-3 rounded-lg transition-colors border border-neutral-200">
         <div class="flex items-center gap-3">
           <UPopover>
             <UButton :ui="{ base: 'p-0 sm:p-0' }" color="neutral" variant="outline" class="rounded-full">
@@ -31,7 +26,10 @@
           </template>
         </UInput>
       </div>
-      <UButton class="" block square size="lg" @click="onContinue" :disabled="pending" :loading="pending">Continue</UButton>
+      <UButton class="w-full flex items-center justify-center" trailing-icon="i-lucide-arrow-right" @click="onContinue"
+        :disabled="pending" :loading="pending" size="lg" square>
+        Continue
+      </UButton>
     </div>
   </div>
 </template>
