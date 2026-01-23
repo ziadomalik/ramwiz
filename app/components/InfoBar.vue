@@ -2,25 +2,49 @@
   <div class="flex justify-between gap-4 bg-[#222] text-[#eee] px-2 py-1 text-xs font-mono w-full">
     <div></div>
     <div class="flex gap-4">
-      <div class="flex gap-1.5">
-        <span class="text-[#aaa]">FPS:</span>
-        <span class="font-bold">{{ fps }}</span>
-      </div>
-      <div class="flex gap-1.5">
-        <span class="text-[#aaa]">Events:</span>
-        <span class="font-bold">{{ formattedEvents }}</span>
+      <div class="flex flex-col gap-1.5 w-64">
+        <div class="flex items-center justify-between gap-1.5">
+          <div class="flex gap-1.5">
+            <span class="text-[#aaa]">Events Loaded: </span>
+            <span class="font-bold">{{ formattedEvents }}</span>
+          </div>
+          <div class="flex gap-1.5">
+            <span class="text-[#aaa]">FPS:</span>
+            <span class="font-bold">{{ fps }}</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <UProgress :model-value="progress" :max="100" size="sm" color="success" />
+          <span class="font-bold text-[#aaa]">({{ eventsLoadedPercentage }}%)</span>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   fps: number;
   eventCount: number;
-}>();
+  totalEvents: number;
+}>(), {
+  fps: 0,
+  eventCount: 0,
+  totalEvents: 0,
+});
+
+const formatter = new Intl.NumberFormat('en-US');
+
+const eventsLoadedPercentage = computed(() => {
+  const pct = Math.round((props.eventCount / props.totalEvents) * 100);
+  return pct < 10 ? `0${pct}` : `${pct}`;
+});
+
+const progress = computed(() => {
+  return Math.round((props.eventCount / props.totalEvents) * 100) || 0;
+});
 
 const formattedEvents = computed(() => {
-  return new Intl.NumberFormat('en-US').format(props.eventCount);
+  return formatter.format(props.eventCount);
 });
 </script>

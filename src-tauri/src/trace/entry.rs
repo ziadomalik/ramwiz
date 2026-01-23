@@ -140,59 +140,23 @@ pub fn parse(mmap: &Mmap, header: &Header, index: u64) -> Result<Entry, EntryErr
     Ok(*entry)
 }
 
-pub fn get_entry_range_bytes(entries: &[Entry], config: &CommandConfig) -> Vec<u8> {
+pub fn get_entry_range_bytes(entries: &[Entry]) -> Vec<u8> {
     let n = entries.len();
 
-    // Get all possible colors and precompute the RGB values from the hex strings.
-    let mut color_lut = HashMap::new();
-    for (&cmd, hex) in &config.colors {
-        let (r, g, b) = parse_color(hex);
-        color_lut.insert(cmd, (r, g, b));
-    }
-
-    // The resulting buffer is 24 bytes:
-    // 1 start (4B) + 1 duration (4B) + 1 row (4B) + 3 colors (4*3B)
-    let buffer_size = n * 24;
-    let mut bytes = vec![0u8; buffer_size];
-
-    let start_offset = 0;
-    let dur_offset = n * 4;
-    let row_offset = n * 8;
-    let color_offset = n * 12;
+    // Layout: [Start CLKs (N * 4 bytes)] [Command IDs (N * 1 byte)]
+    // Total size: N * 5 bytes.
+    let mut bytes = vec![0u8; n * 5];
 
     for (i, entry) in entries.iter().enumerate() {
-        let cmd = entry.cmd_id();
-
         let start_val = entry.clk.get() as f32;
-        let start_idx = start_offset + i * 4;
-        bytes[start_idx..start_idx + 4].copy_from_slice(&start_val.to_le_bytes());
+        let s_offset = i * 4;
+        bytes[s_offset..s_offset + 4].copy_from_slice(&start_val.to_le_bytes());
+    }
 
-        let duration_val = config.clock_periods.get(&cmd).copied().unwrap_or(10.0);
-        let duration_idx = dur_offset + i * 4;
-        bytes[duration_idx..duration_idx + 4].copy_from_slice(&duration_val.to_le_bytes());
-
-        // TODO(ziad): Force all events to row 0 until I figure out how to render them correctly.
-        let row_val = 0.0 as f32; 
-        let row_idx = row_offset + i * 4;
-        bytes[row_idx..row_idx + 4].copy_from_slice(&row_val.to_le_bytes());
-
-        let (r, g, b) = color_lut.get(&cmd).copied().unwrap_or((0.5, 0.5, 0.5));
-        let color_idx = color_offset + i * 12;
-        bytes[color_idx..color_idx + 4].copy_from_slice(&r.to_le_bytes());
-        bytes[color_idx + 4..color_idx + 8].copy_from_slice(&g.to_le_bytes());
-        bytes[color_idx + 8..color_idx + 12].copy_from_slice(&b.to_le_bytes());
+    let cmd_offset = n * 4;
+    for (i, entry) in entries.iter().enumerate() {
+        bytes[cmd_offset + i] = entry.cmd_id;
     }
 
     bytes
-}
-
-fn parse_color(hex: &str) -> (f32, f32, f32) {
-    let hex = hex.trim_start_matches('#');
-    if hex.len() != 6 {
-        return (0.5, 0.5, 0.5);
-    }
-    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as f32 / 255.0;
-    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as f32 / 255.0;
-    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as f32 / 255.0;
-    (r, g, b)
 }

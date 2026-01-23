@@ -5,17 +5,17 @@
 // ----
 
 import createREGL from 'regl';
-import { getEntryIndexByTime, getTraceView } from '~/lib/backend';
+import { getSessionInfoHandler, getTraceView, loadCommandConfig } from '~/lib/backend';
+import type { CommandConfig } from '~/lib/backend';
 
 const vert = `
 precision mediump float;
 attribute vec2 position;
 
-attribute float instanceRow;
-attribute vec3 instanceColor;
 attribute float instanceStart;
-attribute float instanceDuration;
+attribute float instanceCmdId; 
 
+uniform sampler2D u_lookupTable; 
 uniform vec2 u_viewRange; 
 uniform float u_rowHeight;
 uniform vec2 u_resolution;
@@ -23,26 +23,31 @@ uniform vec2 u_resolution;
 varying vec3 vColor;
 
 void main() {
-  vColor = instanceColor;
+  // Map Command ID to Texture U coordinate (0..1)
+  // We sample from the center of the pixel: (id + 0.5) / 256.0
+  vec2 uv = vec2((instanceCmdId + 0.5) / 256.0, 0.5);
+  vec4 properties = texture2D(u_lookupTable, uv);
+  
+  vec3 color = properties.rgb;
+  // We're storing the clock period in the alpha channel lol. 
+  float duration = properties.a; 
+
+  vColor = color;
 
   float viewWidth = u_viewRange.y - u_viewRange.x;
-  float screenWidthPx = (instanceDuration / viewWidth) * u_resolution.x;
-
-  // NOTE: This doesn't render small events, but the data is still fetched and decoded.
-  // TODO(ziad): Decide on a good value for this, it tends to make events dissapear too early. 
-  // if (screenWidthPx < 0.005) {
-  //   gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-  //   return;
-  // }
-
-  float worldX = instanceStart + (position.x * instanceDuration);
   
-  float worldY = instanceRow + position.y;
+  float worldX = instanceStart + (position.x * duration);
+  
+  // TODO(ziad):  Figure out how to handle different rows (e.g. row is passed as a uniform if const).
+  float row = 0.0; 
+  float worldY = row + position.y;
+
   float ndcX = ((worldX - u_viewRange.x) / viewWidth) * 2.0 - 1.0;
   float ndcY = 1.0 - (worldY * u_rowHeight * 2.0 / u_resolution.y);
 
   gl_Position = vec4(ndcX, ndcY, 0, 1);
-}`
+}
+`
 
 const frag = `
 precision mediump float;
@@ -53,57 +58,89 @@ void main() {
 }
 `;
 
-  function decodeTraceData(input: Uint8Array | ArrayBuffer | number[]) {
-    let array: Uint8Array 
+function createLookupTexture(regl: createREGL.Regl, config: CommandConfig) {
+  const MAX_COMMANDS = 256;
 
-    if (input instanceof Uint8Array) {
-      array = input;
-    } else {
-      // Handle ArrayBuffer or number[] or fallback
-      array = new Uint8Array(input as any);
-    }
-  
-    const floatView = new Float32Array(array.buffer, array.byteOffset, array.byteLength / 4);
-    
-    // Calculate total items. 
-    // Each item has: 1 start + 1 duration + 1 row + 3 colors = 6 floats.
-    const N = floatView.length / 6;
+  // Format: RGBA (R,G,B, Duration)
+  const data = new Float32Array(MAX_COMMANDS * 4);
 
-    const starts = floatView.subarray(0, N);
-    const durations = floatView.subarray(N, 2 * N);
-    const rows = floatView.subarray(2 * N, 3 * N);
-    const colors = floatView.subarray(3 * N, 6 * N);
-    
-    return { 
-      starts, 
-      durations, 
-      rows, 
-      colors, 
-      count: N,
-    };
+  // Default values:
+  for (let i = 0; i < MAX_COMMANDS; i++) {
+    data[i * 4 + 0] = 0.5; // R
+    data[i * 4 + 1] = 0.5; // G
+    data[i * 4 + 2] = 0.5; // B
+    data[i * 4 + 3] = 10.0; // Duration
   }
+
+  const hex2rgb = (hex: string) => {
+    hex = hex.replace('#', '');
+    return [
+      parseInt(hex.substring(0, 2), 16) / 255,
+      parseInt(hex.substring(2, 4), 16) / 255,
+      parseInt(hex.substring(4, 6), 16) / 255
+    ];
+  };
+
+  for (const [idStr, hex] of Object.entries(config.colors)) {
+    const id = parseInt(idStr);
+    if (id < 0 || id > 255) continue;
+
+    const [r, g, b] = hex2rgb(hex);
+    data[id * 4 + 0] = r ?? 0.5;
+    data[id * 4 + 1] = g ?? 0.5;
+    data[id * 4 + 2] = b ?? 0.5;
+  }
+
+  for (const [idStr, dur] of Object.entries(config.clockPeriods)) {
+    const id = parseInt(idStr);
+    if (id < 0 || id > 255) continue;
+    if (dur) data[id * 4 + 3] = dur;
+  }
+
+  return regl.texture({
+    width: 256,
+    height: 1,
+    data: data,
+    format: 'rgba',
+    type: 'float',
+    min: 'nearest',
+    mag: 'nearest'
+  });
+}
+
+function decodeTraceData(input: Uint8Array | ArrayBuffer | number[]) {
+  const array = input instanceof Uint8Array ? input : new Uint8Array(input as any);
+
+  // Each entry is 5 bytes: 4 bytes for start + 1 byte for cmd id.
+  const N = array.byteLength / 5;
+  const startBytes = N * 4;
+
+  const startView = new Float32Array(array.buffer, array.byteOffset, N);
+  const cmdView = new Uint8Array(array.buffer, array.byteOffset + startBytes, N);
+
+  return { starts: startView, cmds: cmdView, count: N };
+}
 
 interface DrawProps {
   viewRange: [number, number];
+  offset: number;
+  instances: number;
 }
 
 export const useRenderer = (canvas: Ref<HTMLCanvasElement | null>) => {
   let regl: createREGL.Regl | null = null;
 
   // Buffers for the instance data.
-  let rowBuffer: createREGL.Buffer
-  let colorBuffer: createREGL.Buffer
-  let startBuffer: createREGL.Buffer
-  let durationBuffer: createREGL.Buffer
+  let startBuffer: createREGL.Buffer;
+  let cmdBuffer: createREGL.Buffer;
+  let lookupTexture: createREGL.Texture;
 
-  // Number of trace events to render.
-  let instanceCount = 0;
+  // We maintain a list of chunks and their offsets so we dont have to iterate over the entire buffer when drawing.
+  // We store the time of the chunk and the offset of the first event in the chunk.
+  const chunkIndex: { time: number, offset: number }[] = [];
 
-  // State for culling.
-  let loadedEndVal = 0;
-  let loadedStartVal = 0;
-  let isFetching = false;
-  let pendingUpdate = false;
+  let loadedCount = 0;
+  let abortController: AbortController | null = null;
 
   const viewState = reactive({
     start: 0,
@@ -116,154 +153,244 @@ export const useRenderer = (canvas: Ref<HTMLCanvasElement | null>) => {
   const stats = reactive({
     fps: 0,
     eventCount: 0,
+    totalEvents: 0,
+    progress: 0,
   })
 
-  const updateData = async () => {
-    if (!regl) return;
+  const handleMouseWheel = (event: WheelEvent) => {
+    if (!canvas.value) return;
 
-    if (isFetching) {
-      pendingUpdate = true;
-      return;
+    const rect = canvas.value.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const width = rect.width;
+
+    // Calculate the time range at the mouse position.
+    const timeAtMouse = viewState.start + (mouseX / width) * viewState.duration;
+
+    // Zoom in 10% increments
+    const zoomFactor = 1.1;
+
+    if (event.deltaY > 0) {
+      viewState.duration *= zoomFactor; // Zoom Out
+    } else {
+      viewState.duration /= zoomFactor; // Zoom In
     }
 
-    const currentStart = viewState.start;
-    const currentEnd = viewState.start + viewState.duration;
+    viewState.duration = Math.max(viewState.minDuration, Math.min(viewState.duration, viewState.maxDuration));
 
-    // We prefetch 1 screen ahead and 1 screen behind.
-    const threshold = viewState.duration * 1.0;
-    
-    // Check if we have enough buffer.
-    const hasLeftBuffer = (currentStart - loadedStartVal) > threshold;
-    const hasRightBuffer = (loadedEndVal - currentEnd) > threshold;
+    // Make sure that the time wherever the mouse is remains included in the view.
+    viewState.start = timeAtMouse - (mouseX / width) * viewState.duration;
+  }
 
-    if (hasLeftBuffer && hasRightBuffer) {
-      return;
-    }
+  let isDragging = false;
+  let lastX = 0;
 
-    try {
-      isFetching = true;
+  const handleMouseDown = (e: MouseEvent) => {
+    isDragging = true;
+    lastX = e.clientX;
+  };
 
-      // Load a huge chunk centered on current view.
-      // TODO(ziad): After I manage to integrate culling into the fetch logic, I think I can reduce this to a smaller number.
-      const lookahead = viewState.duration * 5.0;
-      
-      const fetchStartClk = currentStart - lookahead;
-      const fetchEndClk = currentEnd + lookahead;
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isDragging || !canvas.value) return;
 
-      const startIndex = await getEntryIndexByTime(fetchStartClk);
-      const endIndex = await getEntryIndexByTime(fetchEndClk);
+    const dx = e.clientX - lastX;
+    lastX = e.clientX;
 
-      // TODO(ziad): This will be irrelevant once culling logic is done.
-      const MAX_ENTRIES = 10000000;
-      const count = Math.max(0, Math.min(endIndex - startIndex, MAX_ENTRIES));
+    const rect = canvas.value.getBoundingClientRect();
+    // Fraction of screen moved * time duration = time shifted
+    const dt = -(dx / rect.width) * viewState.duration;
 
-      if (count > 0) {
-        const buffer = await getTraceView(startIndex, count)
-        const data = decodeTraceData(buffer);
+    viewState.start += dt;
+  };
 
-        if (data.starts.length > 0) {
-          rowBuffer(data.rows);
-          colorBuffer(data.colors);
-          startBuffer(data.starts);
-          durationBuffer(data.durations);
+  const handleMouseUp = () => {
+    isDragging = false;
+  };
 
-          instanceCount = data.starts.length;
-          loadedStartVal = data.starts[0] ?? 0;
-          loadedEndVal = data.starts[data.starts.length - 1] ?? 0;
-        }
-      }
-    } catch (error) {
-      console.error('Error updating data:', error);
-    } finally {
-      isFetching = false;
-      if (pendingUpdate) {
-        pendingUpdate = false;
-        requestUpdate();
-      }
+  const resize = () => {
+    if (canvas.value) {
+      canvas.value.width = window.innerWidth
+      canvas.value.height = window.innerHeight
+      regl?.poll()
     }
   }
 
-  let debounceTimer: any = null;
-  const requestUpdate = () => {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(updateData, 100);
-  };
+  onUnmounted(() => {
+    if (regl) {
+      regl.destroy()
+    }
 
+    if (abortController) {
+      abortController.abort();
+    }
+
+    if (canvas.value) {
+      canvas.value.removeEventListener('wheel', handleMouseWheel);
+      canvas.value.removeEventListener('mousedown', handleMouseDown);
+    }
+    window.removeEventListener('mousemove', handleMouseMove);
+    window.removeEventListener('mouseup', handleMouseUp);
+    window.removeEventListener('resize', resize);
+  });
+
+  const startStream = async () => {
+    if (!regl) return;
+    if (abortController) {
+      abortController.abort();
+    }
+
+    abortController = new AbortController();
+    const signal = abortController.signal;
+
+    try {
+      loadedCount = 0;
+      chunkIndex.length = 0;
+
+      const header = await getSessionInfoHandler();
+      if (!header) return;
+
+      const totalEntries = header.num_entries;
+      stats.totalEvents = totalEntries;
+
+      // We allocate the full number of entries on the GPU immediately. (i.e. 4 bytes for start, 1 byte for cmd)
+      startBuffer = regl.buffer({ length: totalEntries * 4, type: 'float', usage: 'dynamic' });
+      cmdBuffer = regl.buffer({ length: totalEntries, type: 'uint8', usage: 'dynamic' });
+
+      const config = await loadCommandConfig();
+
+      if (config) {
+        lookupTexture = createLookupTexture(regl, config);
+      }
+
+      // Load 100k events at a time 
+      const CHUNK_SIZE = 50_000;
+      const START_TIME = 200;
+
+      const firstChunk = await getTraceView(0, 1);
+      const firstData = decodeTraceData(firstChunk);
+      if (firstData.count > 0) {
+        viewState.start = firstData.starts[0] ?? 0.0;
+        viewState.duration = START_TIME;
+
+        chunkIndex.push({ time: viewState.start, offset: 0 });
+      }
+
+      // Load the chunks until we reach the end of the buffer.
+      let offset = 0;
+      while (offset < totalEntries) {
+        if (signal.aborted) break;
+
+        const count = Math.min(CHUNK_SIZE, totalEntries - offset);
+
+        const buffer = await getTraceView(offset, count);
+        const data = decodeTraceData(buffer);
+
+        if (data.count > 0) {
+          chunkIndex.push({ time: data.starts[0]!, offset: offset });
+        }
+
+        startBuffer.subdata(data.starts, offset * 4);
+        cmdBuffer.subdata(data.cmds, offset * 1);
+
+        offset += count;
+        loadedCount = offset;
+
+        stats.progress = loadedCount / totalEntries;
+        stats.eventCount = loadedCount;
+
+        await new Promise(resolve => requestAnimationFrame(resolve));
+      }
+    } catch (error) {
+      console.log('Streaming Error: ', error);
+    }
+  }
 
   onMounted(async () => {
     if (!canvas.value) return;
 
     try {
-      // Initialize rendering logic:
-      // ---------------------------
-
-      const bytes = await getTraceView(0, 10000);
-      const traceData = decodeTraceData(bytes);
-
       regl = createREGL({
         canvas: canvas.value,
         attributes: { antialias: true },
-        extensions: ['angle_instanced_arrays']
+        extensions: ['angle_instanced_arrays', 'oes_texture_float']
       });
 
-      startBuffer = regl.buffer(traceData.starts);
-      durationBuffer = regl.buffer(traceData.durations);
-      rowBuffer = regl.buffer(traceData.rows);
-      colorBuffer = regl.buffer(traceData.colors);
+      // Need to initialize these to dummy values to avoid errors.
+      startBuffer = regl.buffer(0);
+      cmdBuffer = regl.buffer(0);
+      lookupTexture = regl.texture({ width: 1, height: 1 });
 
-      if (traceData.starts.length > 0) {
-        instanceCount = traceData.starts.length;
-
-        loadedStartVal = traceData.starts[0] ?? 0;
-        loadedEndVal = traceData.starts[traceData.starts.length - 1] ?? 0;
-
-        viewState.start = loadedStartVal;
-        viewState.duration = (loadedEndVal - loadedStartVal) * 0.1;
-      }
-
-      let draw = regl({
+      let draw = regl<any, any, DrawProps>({
         vert,
         frag,
 
         attributes: {
           position: [[0, 0], [1, 0], [0, 1], [0, 1], [1, 0], [1, 1]],
-          instanceStart: { buffer: startBuffer, divisor: 1 },
-          instanceDuration: { buffer: durationBuffer, divisor: 1 },
-          instanceRow: { buffer: rowBuffer, divisor: 1 },
-          instanceColor: { buffer: colorBuffer, divisor: 1 },
+          instanceStart: {
+            buffer: () => startBuffer,
+            divisor: 1,
+            offset: (ctx: any, props: DrawProps) => props.offset * 4
+          },
+          instanceCmdId: {
+            buffer: () => cmdBuffer,
+            divisor: 1,
+            normalized: false,
+            offset: (ctx: any, props: DrawProps) => props.offset * 1
+          },
         },
 
         uniforms: {
           u_viewRange: regl.prop<DrawProps, 'viewRange'>('viewRange'),
           u_rowHeight: 20.0,
-          u_resolution: ctx => [ctx.viewportWidth, ctx.viewportHeight]
+          u_resolution: (ctx: any) => [ctx.viewportWidth, ctx.viewportHeight],
+          u_lookupTable: () => lookupTexture
         },
 
-        instances: () => instanceCount,
+        instances: (ctx: any, props: DrawProps) => props.instances,
         count: 6
       })
-
-      // Initialize view state:
-      // ----------------------
-
-      if (traceData.starts.length > 0) {
-        viewState.start = traceData.starts[0] ?? 0;
-        viewState.duration = ((traceData.starts[traceData.starts.length - 1] ?? 0) - (traceData.starts[0] ?? 0)) * 0.1;
-      }
-
-      // Initialize frame loop:
-      // ----------------------
 
       let frameCount = 0;
       let lastFpsUpdate = performance.now();
 
       regl?.frame(() => {
-        regl?.clear({
-          color: [0.1, 0.1, 0.1, 1],
-          depth: 1
-        })
+        regl?.clear({ color: [0.1, 0.1, 0.1, 1], depth: 1 });
 
-        draw({ viewRange: [viewState.start, viewState.start + viewState.duration] })
+        const viewStart = viewState.start;
+        const viewEnd = viewState.start + viewState.duration;
+
+        // The culling logic is as follows:
+        // 1. Find the start and end offsets of the chunk that contains the view range.
+        // 2. Draw the chunk.
+        // 3. Repeat for the next chunk until we reach the end of the buffer.
+
+        let startOffset = 0;
+        let endOffset = loadedCount;
+
+        for (let i = 0; i < chunkIndex.length; i++) {
+          if (chunkIndex[i]!.time > viewStart) {
+            break;
+          }
+          startOffset = chunkIndex[i]!.offset;
+        }
+
+        for (let i = 0; i < chunkIndex.length; i++) {
+          if (chunkIndex[i]!.time > viewEnd) {
+            endOffset = chunkIndex[i]!.offset;
+            break;
+          }
+          if (i === chunkIndex.length - 1) {
+            endOffset = loadedCount;
+          }
+        }
+
+        const count = Math.max(0, endOffset - startOffset);
+
+        draw({
+          viewRange: [viewStart, viewEnd],
+          offset: startOffset,
+          instances: count
+        });
 
         frameCount++;
         const now = performance.now();
@@ -272,102 +399,22 @@ export const useRenderer = (canvas: Ref<HTMLCanvasElement | null>) => {
           frameCount = 0;
           lastFpsUpdate = now;
         }
-
-        stats.eventCount = instanceCount;
       });
 
-      const handleMouseWheel = (event: WheelEvent) => {
-        if (!canvas.value) return;
-
-        const rect = canvas.value.getBoundingClientRect();
-        const mouseX = event.clientX - rect.left;
-        const width = rect.width;
-
-        // Calculate the time range at the mouse position.
-        const timeAtMouse = viewState.start + (mouseX / width) * viewState.duration;
-
-        // Zoom in 10% increments
-        const zoomFactor = 1.1;
-
-        if (event.deltaY > 0) {
-          viewState.duration *= zoomFactor; // Zoom Out
-        } else {
-          viewState.duration /= zoomFactor; // Zoom In
-        }
-
-        viewState.duration = Math.max(viewState.minDuration, Math.min(viewState.duration, viewState.maxDuration));
-
-        // Make sure that the time wherever the mouse is remains included in the view.
-        viewState.start = timeAtMouse - (mouseX / width) * viewState.duration;
-
-        requestUpdate();
-      }
-
-      let isDragging = false;
-      let lastX = 0;
-
-      const handleMouseDown = (e: MouseEvent) => {
-        isDragging = true;
-        lastX = e.clientX;
-      };
-
-      const handleMouseMove = (e: MouseEvent) => {
-        if (!isDragging || !canvas.value) return;
-
-        const dx = e.clientX - lastX;
-        lastX = e.clientX;
-
-        const rect = canvas.value.getBoundingClientRect();
-        // Fraction of screen moved * time duration = time shifted
-        const dt = -(dx / rect.width) * viewState.duration;
-
-        viewState.start += dt;
-
-        requestUpdate();
-      };
-
-      const handleMouseUp = () => {
-        isDragging = false;
-      };
-
+      // Add listeners
       if (canvas.value) {
         canvas.value.addEventListener('wheel', handleMouseWheel, { passive: false });
         canvas.value.addEventListener('mousedown', handleMouseDown);
-        window.addEventListener('mousemove', handleMouseMove);
-        window.addEventListener('mouseup', handleMouseUp);
       }
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('resize', resize);
+      resize();
 
-      onUnmounted(() => {
-        if (canvas.value) {
-          canvas.value.removeEventListener('wheel', handleMouseWheel);
-          canvas.value.removeEventListener('mousedown', handleMouseDown);
-          window.removeEventListener('mousemove', handleMouseMove);
-          window.removeEventListener('mouseup', handleMouseUp);
-        }
-      })
+      startStream();
+
     } catch (error) {
       console.error('Error initializing REGL:', error);
-    }
-
-    const resize = () => {
-      if (canvas.value) {
-        canvas.value.width = window.innerWidth
-        canvas.value.height = window.innerHeight
-        regl?.poll()
-      }
-    }
-
-    window.addEventListener('resize', resize)
-    resize()
-
-    onUnmounted(() => {
-      window.removeEventListener('resize', resize)
-    })
-  });
-
-  onUnmounted(() => {
-    if (regl) {
-      regl.destroy()
     }
   });
 

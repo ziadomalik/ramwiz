@@ -69,9 +69,7 @@ fn get_entry_index_by_time(time: i64, session: State<'_, SessionState>) -> Resul
     let loader = loader_guard
         .as_ref()
         .ok_or_else(|| "No trace loaded".to_string())?;
-    loader
-        .find_index_for_time(time)
-        .map_err(|e| e.to_string())
+    loader.find_index_for_time(time).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -85,15 +83,10 @@ fn get_trace_view(
         .as_ref()
         .ok_or_else(|| "No trace loaded".to_string())?;
 
-    let config_guard = session.config.lock().map_err(|e| e.to_string())?;
-    let config = config_guard
-        .as_ref()
-        .ok_or_else(|| "No config loaded".to_string())?;
-
     let entries = loader
         .load_entry_slice(start, count as usize)
         .map_err(|e| e.to_string())?;
-    let bytes = trace::entry::get_entry_range_bytes(entries, config);
+    let bytes = trace::entry::get_entry_range_bytes(entries);
 
     Ok(Response::new(bytes))
 }
