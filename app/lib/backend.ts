@@ -89,6 +89,10 @@ export interface EntryRangeSoA {
   colors: number[];
 }
 
-export async function getTraceView(start: number, count: number): Promise<EntryRangeSoA> {
-  return invoke<EntryRangeSoA>('get_trace_view', { start, count });
+export async function getTraceView(start: number, count: number): Promise<Uint8Array> {
+  return invoke<Uint8Array>('get_trace_view', { start, count });
+}
+
+export async function getEntryIndexByTime(time: number): Promise<number> {
+  return invoke<number>('get_entry_index_by_time', { time: Math.floor(time) });
 }

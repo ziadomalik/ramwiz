@@ -68,18 +68,52 @@ impl TraceLoader {
     }
 
     pub fn load_entry_slice(&self, start: u64, count: usize) -> Result<&[Entry], std::io::Error> {
-        let start_offset = std::mem::size_of::<Header>() + (start as usize * std::mem::size_of::<Entry>());
+        let start_offset =
+            std::mem::size_of::<Header>() + (start as usize * std::mem::size_of::<Entry>());
         let end_offset = start_offset + (count * std::mem::size_of::<Entry>());
 
         if end_offset > self.mmap.len() {
-            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Out of bounds"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "Out of bounds",
+            ));
         }
 
         let slice = &self.mmap[start_offset..end_offset];
-        
+
         let (entries, _) = Ref::<&[u8], [Entry]>::from_prefix_with_elems(slice, count)
             .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "Cast failed"))?;
 
         Ok(Ref::into_ref(entries))
+    }
+
+    // Since the clk's aren't spaced evenly, we need to rely on index lookup and yet, the whole UI only makes sense in terms of time.
+    // So we look for an entry with a given clk using binary search and obtain the index.
+    // TODO(ziad): This is horrible. There's got to be a better way to do this.
+    pub fn find_index_for_time(&self, target_clk: i64) -> Result<u64, std::io::Error> {
+        let num_entries = self.header.num_entries();
+        if num_entries == 0 {
+            return Ok(0);
+        }
+
+        let mut low = 0;
+        let mut high = num_entries - 1;
+        let mut result = num_entries;
+
+        while low <= high {
+            let mid = low + (high - low) / 2;
+            let entry = self.load_entry(mid)?;
+
+            if entry.clk.get() >= target_clk {
+                result = mid;
+                if mid == 0 {
+                    break;
+                }
+                high = mid - 1;
+            } else {
+                low = mid + 1;
+            }
+        }
+        Ok(result)
     }
 }

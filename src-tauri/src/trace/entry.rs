@@ -138,30 +138,27 @@ pub fn parse(mmap: &Mmap, header: &Header, index: u64) -> Result<Entry, EntryErr
     Ok(*entry)
 }
 
-/// A range of entries in a format that's friendly to WebGL
-#[derive(Serialize, Deserialize)]
-pub struct EntryRangeSoA {
-    pub starts: Vec<f32>,
-    pub durations: Vec<f32>,
-    pub rows: Vec<f32>,
-    pub colors: Vec<f32>,
-}
-
-pub fn get_entry_range_soa(entries: &[Entry], config: &CommandConfig) -> EntryRangeSoA {
+pub fn get_entry_range_bytes(entries: &[Entry], config: &CommandConfig) -> Vec<u8> {
     let n = entries.len();
+
+    // We can just iterate and write bytes, but writing floats is easier.
+    // Let's create a Vec<f32> then cast to u8.
+
+    // We return one Vec<u8> that contains all 4 arrays concatenated. Frontend will slice it into separate arrays.
+    // Concatenation order: [starts...][durations...][rows...][colors...]
+
     let mut starts = Vec::with_capacity(n);
     let mut durations = Vec::with_capacity(n);
     let mut rows = Vec::with_capacity(n);
     let mut colors = Vec::with_capacity(n * 3);
 
-        for entry in entries {
-
+    for entry in entries {
         starts.push(entry.clk.get() as f32);
-        rows.push(entry.row.get() as f32);
+
+        rows.push(0.0); // TODO(ziad): Force all events to row 0 until I figure out how to render them correctly.
 
         let cmd = entry.cmd_id;
-        let duration = config.clock_periods.get(&cmd).copied().unwrap_or(10.0);
-        durations.push(duration);
+        durations.push(config.clock_periods.get(&cmd).copied().unwrap_or(10.0));
 
         if let Some(hex) = config.colors.get(&cmd) {
             let (r, g, b) = parse_color(hex);
@@ -169,19 +166,28 @@ pub fn get_entry_range_soa(entries: &[Entry], config: &CommandConfig) -> EntryRa
             colors.push(g);
             colors.push(b);
         } else {
-            // Default Grey
             colors.push(0.5);
             colors.push(0.5);
             colors.push(0.5);
         }
     }
 
-    EntryRangeSoA {
-        starts,
-        durations,
-        rows,
-        colors,
+    // Pack into bytes
+    let mut bytes = Vec::new();
+
+    // Helper to append f32 slice as bytes
+    fn append_floats(bytes: &mut Vec<u8>, data: &[f32]) {
+        let raw_bytes =
+            unsafe { std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 4) };
+        bytes.extend_from_slice(raw_bytes);
     }
+
+    append_floats(&mut bytes, &starts);
+    append_floats(&mut bytes, &durations);
+    append_floats(&mut bytes, &rows);
+    append_floats(&mut bytes, &colors);
+
+    bytes
 }
 
 fn parse_color(hex: &str) -> (f32, f32, f32) {

@@ -3,6 +3,7 @@ mod user_data;
 
 use std::path::PathBuf;
 use std::sync::Mutex;
+use tauri::ipc::Response;
 use tauri::{AppHandle, State};
 
 /// Holds the current session state i.e. the loaded trace file and its parsed data.
@@ -63,29 +64,38 @@ fn load_dictionary(
 }
 
 #[tauri::command]
+fn get_entry_index_by_time(time: i64, session: State<'_, SessionState>) -> Result<u64, String> {
+    let loader_guard = session.loader.lock().map_err(|e| e.to_string())?;
+    let loader = loader_guard
+        .as_ref()
+        .ok_or_else(|| "No trace loaded".to_string())?;
+    loader
+        .find_index_for_time(time)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_trace_view(
-    app: AppHandle,
     start: u64,
     count: u64,
     session: State<'_, SessionState>,
-) -> Result<trace::entry::EntryRangeSoA, String> {
-    // Refresh the command config, just in case one changes the clock periods after loading the trace.
-    // TODO(ziad): Figure out if loading the config with each invocation is the best way to do this.
-    let config = user_data::load_command_config(&app)?;
-    {
-        let mut guard = session.config.lock().map_err(|e| e.to_string())?;
-        *guard = config;
-    }
-
+) -> Result<Response, String> {
     let loader_guard = session.loader.lock().map_err(|e| e.to_string())?;
-    let loader = loader_guard.as_ref().ok_or_else(|| "No trace loaded".to_string())?;
+    let loader = loader_guard
+        .as_ref()
+        .ok_or_else(|| "No trace loaded".to_string())?;
 
     let config_guard = session.config.lock().map_err(|e| e.to_string())?;
-    let config = config_guard.as_ref().ok_or_else(|| "No config loaded".to_string())?;
+    let config = config_guard
+        .as_ref()
+        .ok_or_else(|| "No config loaded".to_string())?;
 
-    let entries = loader.load_entry_slice(start, count as usize).map_err(|e| e.to_string())?;
+    let entries = loader
+        .load_entry_slice(start, count as usize)
+        .map_err(|e| e.to_string())?;
+    let bytes = trace::entry::get_entry_range_bytes(entries, config);
 
-    Ok(trace::entry::get_entry_range_soa(entries, config))
+    Ok(Response::new(bytes))
 }
 
 #[tauri::command]
@@ -121,7 +131,8 @@ pub fn run() {
             load_dictionary,
             close_session,
             get_session_info,
-            get_trace_view
+            get_trace_view,
+            get_entry_index_by_time,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
