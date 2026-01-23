@@ -141,9 +141,6 @@ pub fn parse(mmap: &Mmap, header: &Header, index: u64) -> Result<Entry, EntryErr
 pub fn get_entry_range_bytes(entries: &[Entry], config: &CommandConfig) -> Vec<u8> {
     let n = entries.len();
 
-    // We can just iterate and write bytes, but writing floats is easier.
-    // Let's create a Vec<f32> then cast to u8.
-
     // We return one Vec<u8> that contains all 4 arrays concatenated. Frontend will slice it into separate arrays.
     // Concatenation order: [starts...][durations...][rows...][colors...]
 
