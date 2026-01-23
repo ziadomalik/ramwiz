@@ -150,42 +150,38 @@ pub fn get_entry_range_bytes(entries: &[Entry], config: &CommandConfig) -> Vec<u
         color_lut.insert(cmd, (r, g, b));
     }
 
-    // We return one Vec<u8> that contains all 4 arrays concatenated. Frontend will slice it into separate arrays.
-    // Concatenation order: [starts...][durations...][rows...][colors...]
+    // The resulting buffer is 24 bytes:
+    // 1 start (4B) + 1 duration (4B) + 1 row (4B) + 3 colors (4*3B)
+    let buffer_size = n * 24;
+    let mut bytes = vec![0u8; buffer_size];
 
-    let mut starts = Vec::with_capacity(n);
-    let mut durations = Vec::with_capacity(n);
-    let mut rows = Vec::with_capacity(n);
-    let mut colors = Vec::with_capacity(n * 3);
+    let start_offset = 0;
+    let dur_offset = n * 4;
+    let row_offset = n * 8;
+    let color_offset = n * 12;
 
-    for entry in entries {
-        starts.push(entry.clk.get() as f32);
+    for (i, entry) in entries.iter().enumerate() {
+        let cmd = entry.cmd_id();
 
-        rows.push(0.0); // TODO(ziad): Force all events to row 0 until I figure out how to render them correctly.
+        let start_val = entry.clk.get() as f32;
+        let start_idx = start_offset + i * 4;
+        bytes[start_idx..start_idx + 4].copy_from_slice(&start_val.to_le_bytes());
 
-        let cmd = entry.cmd_id;
-        durations.push(config.clock_periods.get(&cmd).copied().unwrap_or(10.0));
+        let duration_val = config.clock_periods.get(&cmd).copied().unwrap_or(10.0);
+        let duration_idx = dur_offset + i * 4;
+        bytes[duration_idx..duration_idx + 4].copy_from_slice(&duration_val.to_le_bytes());
+
+        // TODO(ziad): Force all events to row 0 until I figure out how to render them correctly.
+        let row_val = 0.0 as f32; 
+        let row_idx = row_offset + i * 4;
+        bytes[row_idx..row_idx + 4].copy_from_slice(&row_val.to_le_bytes());
 
         let (r, g, b) = color_lut.get(&cmd).copied().unwrap_or((0.5, 0.5, 0.5));
-        colors.push(r);
-        colors.push(g);
-        colors.push(b);
+        let color_idx = color_offset + i * 12;
+        bytes[color_idx..color_idx + 4].copy_from_slice(&r.to_le_bytes());
+        bytes[color_idx + 4..color_idx + 8].copy_from_slice(&g.to_le_bytes());
+        bytes[color_idx + 8..color_idx + 12].copy_from_slice(&b.to_le_bytes());
     }
-
-    // Pack into bytes
-    let mut bytes = Vec::new();
-
-    // Helper to append f32 slice as bytes
-    fn append_floats(bytes: &mut Vec<u8>, data: &[f32]) {
-        let raw_bytes =
-            unsafe { std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 4) };
-        bytes.extend_from_slice(raw_bytes);
-    }
-
-    append_floats(&mut bytes, &starts);
-    append_floats(&mut bytes, &durations);
-    append_floats(&mut bytes, &rows);
-    append_floats(&mut bytes, &colors);
 
     bytes
 }
