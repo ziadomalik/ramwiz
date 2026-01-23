@@ -30,10 +30,10 @@ void main() {
 
   // NOTE: This doesn't render small events, but the data is still fetched and decoded.
   // TODO(ziad): Decide on a good value for this, it tends to make events dissapear too early. 
-  if (screenWidthPx < 0.005) {
-    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-    return;
-  }
+  // if (screenWidthPx < 0.005) {
+  //   gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+  //   return;
+  // }
 
   float worldX = instanceStart + (position.x * instanceDuration);
   

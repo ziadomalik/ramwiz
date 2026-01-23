@@ -38,6 +38,8 @@ use zerocopy::byteorder::little_endian::I16 as LeI16;
 use zerocopy::byteorder::little_endian::I32 as LeI32;
 use zerocopy::byteorder::little_endian::I64 as LeI64;
 
+use std::collections::HashMap;
+
 use crate::user_data::CommandConfig;
 
 use crate::trace::header::Header;
@@ -141,6 +143,13 @@ pub fn parse(mmap: &Mmap, header: &Header, index: u64) -> Result<Entry, EntryErr
 pub fn get_entry_range_bytes(entries: &[Entry], config: &CommandConfig) -> Vec<u8> {
     let n = entries.len();
 
+    // Get all possible colors and precompute the RGB values from the hex strings.
+    let mut color_lut = HashMap::new();
+    for (&cmd, hex) in &config.colors {
+        let (r, g, b) = parse_color(hex);
+        color_lut.insert(cmd, (r, g, b));
+    }
+
     // We return one Vec<u8> that contains all 4 arrays concatenated. Frontend will slice it into separate arrays.
     // Concatenation order: [starts...][durations...][rows...][colors...]
 
@@ -157,16 +166,10 @@ pub fn get_entry_range_bytes(entries: &[Entry], config: &CommandConfig) -> Vec<u
         let cmd = entry.cmd_id;
         durations.push(config.clock_periods.get(&cmd).copied().unwrap_or(10.0));
 
-        if let Some(hex) = config.colors.get(&cmd) {
-            let (r, g, b) = parse_color(hex);
-            colors.push(r);
-            colors.push(g);
-            colors.push(b);
-        } else {
-            colors.push(0.5);
-            colors.push(0.5);
-            colors.push(0.5);
-        }
+        let (r, g, b) = color_lut.get(&cmd).copied().unwrap_or((0.5, 0.5, 0.5));
+        colors.push(r);
+        colors.push(g);
+        colors.push(b);
     }
 
     // Pack into bytes
