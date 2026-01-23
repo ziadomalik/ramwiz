@@ -1,6 +1,5 @@
 <template>
-  <div class="flex justify-between gap-4 bg-[#222] text-[#eee] px-2 py-1 text-xs font-mono w-full">
-    <div></div>
+  <div class="flex justify-end gap-4 bg-[#222] text-[#eee] border-t border-[#444] px-2 py-1 text-xs font-mono w-full">
     <div class="flex gap-4">
       <div class="flex flex-col gap-1.5 w-64">
         <div class="flex items-center justify-between gap-1.5">

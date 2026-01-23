@@ -38,10 +38,6 @@ use zerocopy::byteorder::little_endian::I16 as LeI16;
 use zerocopy::byteorder::little_endian::I32 as LeI32;
 use zerocopy::byteorder::little_endian::I64 as LeI64;
 
-use std::collections::HashMap;
-
-use crate::user_data::CommandConfig;
-
 use crate::trace::header::Header;
 
 use crate::trace::serialize::{
