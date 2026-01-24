@@ -147,7 +147,7 @@ export const useRenderer = (canvas: Ref<HTMLCanvasElement | null>) => {
     scrollY: 0,
     duration: 100,
     minDuration: 100,
-    maxDuration: 1250,
+    maxDuration: 1200,
 
     // Boundaries for the time range.
     minTime: 0,
@@ -315,8 +315,8 @@ export const useRenderer = (canvas: Ref<HTMLCanvasElement | null>) => {
           if (lastTime > viewState.maxTime) {
             viewState.maxTime = lastTime;
 
-            // Limit max zoom to the full trace range + 12.5% padding on each side.
-            viewState.maxDuration = (viewState.maxTime - viewState.minTime) * 1.05;
+            // Limit max zoom to the full trace range + 20% padding on each side.
+            viewState.maxDuration = (viewState.maxTime - viewState.minTime) * 1.2;
           }
         }
 
