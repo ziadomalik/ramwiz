@@ -3,7 +3,7 @@
     <UDashboardSidebar :ui="{ body: 'p-0 gap-0' }">
       <div :style="{ 'padding-top': PADDING_TOP }" class="border-b border-neutral-800"></div>
       <div ref="treeContainer">
-        <UTree size="xl" :items="items" :ui="{ link: 'rounded-none before:rounded-none', listWithChildren: 'pb-24 border-b border-neutral-800' }" />
+        <UTree size="xl" :items="items" :ui="{ link: 'rounded-none before:rounded-none', listWithChildren: 'pb-24 border-b border-neutral-800', itemWithChildren: 'ps-0' }" />
       </div>
     </UDashboardSidebar>
     <UDashboardPanel>

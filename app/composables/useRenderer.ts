@@ -36,7 +36,8 @@ void main() {
 const gridFrag = `
 precision mediump float;
 void main() {
-  gl_FragColor = vec4(0.2, 0.2, 0.2, 1.0);
+  // TODO(ziad): Match color the scheme.
+  gl_FragColor = vec4(0.3, 0.3, 0.3, 1.0);
 }
 `
 
