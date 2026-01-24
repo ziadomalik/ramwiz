@@ -1,5 +1,5 @@
 <template>
-  <div class="flex justify-end gap-4 bg-neutral-800 text-neutral-200 border-t border-neutral-700 px-2 py-1 text-xs font-mono w-full">
+  <div class="flex justify-end gap-4 bg-neutral-900 text-neutral-200 border-t border-neutral-800 px-2 py-1 text-xs font-mono w-full">
     <div class="flex gap-4">
       <div class="flex flex-col gap-1.5">
         <div class="flex items-center justify-between gap-1.5">
@@ -10,7 +10,7 @@
               <span class="font-bold text-neutral-400">({{ eventsLoadedPercentage }}%)</span>
             </div>
           </div>
-          <div class="flex gap-1.5 border-l border-neutral-700 pl-2 min-w-12">
+          <div class="flex gap-1.5 border-l border-neutral-800 pl-2 min-w-12">
             <span class="text-neutral-400">FPS:</span>
             <span class="font-bold">{{ formattedFPS }}</span>
           </div>

@@ -147,7 +147,12 @@ export const useRenderer = (canvas: Ref<HTMLCanvasElement | null>) => {
     scrollY: 0,
     duration: 100,
     minDuration: 100,
-    maxDuration: 1e9,
+    maxDuration: 1250,
+
+    // Boundaries for the time range.
+    minTime: 0,
+    maxTime: 1000,
+    viewRange: [0, 0],
   })
 
   const stats = reactive({
@@ -156,6 +161,19 @@ export const useRenderer = (canvas: Ref<HTMLCanvasElement | null>) => {
     totalEvents: 0,
     progress: 0,
   })
+
+  // Handlers for the timeline bounds.
+
+  const clampViewStart = (s: number) => {
+    const padding = viewState.duration * 0.1;
+    const min = viewState.minTime - padding;
+
+    // Ensure we don't clamp past the max if zoomed out far
+    const max = Math.max(min, viewState.maxTime - viewState.duration + padding);
+    return Math.max(min, Math.min(s, max));
+  }
+
+  // Handlers for zooming and panning.
 
   const handleMouseWheel = (event: WheelEvent) => {
     if (!canvas.value) return;
@@ -179,7 +197,8 @@ export const useRenderer = (canvas: Ref<HTMLCanvasElement | null>) => {
     viewState.duration = Math.max(viewState.minDuration, Math.min(viewState.duration, viewState.maxDuration));
 
     // Make sure that the time wherever the mouse is remains included in the view.
-    viewState.start = timeAtMouse - (mouseX / width) * viewState.duration;
+    const newStart = timeAtMouse - (mouseX / width) * viewState.duration;
+    viewState.start = clampViewStart(newStart);
   }
 
   let isDragging = false;
@@ -200,7 +219,7 @@ export const useRenderer = (canvas: Ref<HTMLCanvasElement | null>) => {
     // Fraction of screen moved * time duration = time shifted
     const dt = -(dx / rect.width) * viewState.duration;
 
-    viewState.start += dt;
+    viewState.start = clampViewStart(viewState.start + dt);
   };
 
   const handleMouseUp = () => {
@@ -264,15 +283,16 @@ export const useRenderer = (canvas: Ref<HTMLCanvasElement | null>) => {
 
       // Load 100k events at a time 
       const CHUNK_SIZE = 50_000;
-      const START_TIME = 200;
+      const START_TIME = 300;
 
       const firstChunk = await getTraceView(0, 1);
       const firstData = decodeTraceData(firstChunk);
       if (firstData.count > 0) {
-        viewState.start = firstData.starts[0] ?? 0.0;
         viewState.duration = START_TIME;
+        // The 0.01 adds a small bit of padding to the left so we see the start of the timeline.
+        viewState.start = -viewState.duration * 0.01;
 
-        chunkIndex.push({ time: viewState.start, offset: 0 });
+        chunkIndex.push({ time: firstData.starts[0] ?? 0.0, offset: 0 });
       }
 
       // Load the chunks until we reach the end of the buffer.
@@ -286,7 +306,18 @@ export const useRenderer = (canvas: Ref<HTMLCanvasElement | null>) => {
         const data = decodeTraceData(buffer);
 
         if (data.count > 0) {
-          chunkIndex.push({ time: data.starts[0]!, offset: offset });
+          if (offset > 0) {
+            chunkIndex.push({ time: data.starts[0]!, offset: offset });
+          }
+
+          // Update the max time if we've seen a new event.
+          const lastTime = data.starts[data.count - 1]!;
+          if (lastTime > viewState.maxTime) {
+            viewState.maxTime = lastTime;
+
+            // Limit max zoom to the full trace range + 12.5% padding on each side.
+            viewState.maxDuration = (viewState.maxTime - viewState.minTime) * 1.05;
+          }
         }
 
         startBuffer.subdata(data.starts, offset * 4);
