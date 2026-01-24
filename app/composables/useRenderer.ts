@@ -354,7 +354,10 @@ export const useRenderer = (canvas: Ref<HTMLCanvasElement | null>) => {
       let lastFpsUpdate = performance.now();
 
       regl?.frame(() => {
-        regl?.clear({ color: [0.1, 0.1, 0.1, 1], depth: 1 });
+        // I am hardcoding the tailwind bg-zinc-900 color to the background color.
+        // TODO(ziad): This should be dynamic to support other color modes + themes in the future.
+        const backgroundColor = [24, 24, 27, 255].map(x => x / 255) as [number, number, number, number];
+        regl?.clear({ color: backgroundColor, depth: 1 });
 
         const viewStart = viewState.start;
         const viewEnd = viewState.start + viewState.duration;
