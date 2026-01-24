@@ -5,27 +5,28 @@
         <h1 class="text-3xl font-bold">Command Setup</h1>
         <p class="text-sm text-gray-500">Please provide a clock period for each command.</p>
       </div>
-      <div v-for="(command, id) in dictionary" :key="id"
-        class="flex items-center justify-between gap-4 p-3 rounded-lg transition-colors border border-neutral-200">
-        <div class="flex items-center gap-3">
-          <UPopover>
-            <UButton :ui="{ base: 'p-0 sm:p-0' }" color="neutral" variant="outline" class="rounded-full">
-              <span :style="{ backgroundColor: commandColors[id] }" class="size-7 rounded-full" />
-            </UButton>
-            <template #content>
-              <UColorPicker v-model="commandColors[id]" class="p-2" />
+      <UCard v-for="(command, id) in dictionary" :key="id" :ui="{ body: 'p-3 sm:p-3' }">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <UPopover>
+              <UButton :ui="{ base: 'p-0 sm:p-0' }" color="neutral" variant="outline" class="rounded-full">
+                <span :style="{ backgroundColor: commandColors[id] }" class="size-7 rounded-full" />
+              </UButton>
+              <template #content>
+                <UColorPicker v-model="commandColors[id]" class="p-2" />
+              </template>
+            </UPopover>
+            <span class="font-mono font-medium text-sm">{{ command }}</span>
+          </div>
+          <UInput type="number" placeholder="0" class="w-24 rounded-full" v-model="clockPeriods[id]">
+            <template #trailing>
+              <span class="text-sm text-gray-400 select-none">
+                clk
+              </span>
             </template>
-          </UPopover>
-          <span class="font-mono font-medium text-sm">{{ command }}</span>
+          </UInput>
         </div>
-        <UInput type="number" placeholder="0" class="w-24 rounded-full" v-model="clockPeriods[id]">
-          <template #trailing>
-            <span class="text-sm text-gray-400 select-none">
-              clk
-            </span>
-          </template>
-        </UInput>
-      </div>
+      </UCard>
       <UButton :disabled="disableButton" class="w-full flex items-center justify-center" trailing-icon="i-lucide-arrow-right" @click="onContinue"
         :loading="pending" size="lg" square>
         Continue

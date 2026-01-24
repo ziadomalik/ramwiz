@@ -14,6 +14,11 @@ export default defineNuxtConfig({
     },
   },
 
+  colorMode: {
+    preference: 'dark',
+    storageKey: 'color-mode-ramwiz',
+  },
+
   // Tauri-specific configuration //
   ssr: false,
   devServer: {

@@ -1,5 +1,5 @@
 <template>
-  <div class="relative w-full h-screen flex flex-col overflow-hidden bg-[#111]">
+  <div class="relative w-full h-screen flex flex-col overflow-hidden bg-neutral-900">
     <div class="flex-1 min-h-0 overflow-hidden">
       <canvas ref="canvas" class="w-full h-full" />
     </div>
