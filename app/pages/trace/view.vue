@@ -17,6 +17,10 @@
 </template>
 
 <script setup lang="ts">
+definePageMeta({
+  layout: 'trace',
+});
+
 const canvas = ref<HTMLCanvasElement | null>(null);
 const { stats, viewState } = useRenderer(canvas);
 </script>
