@@ -68,7 +68,17 @@ void main() {
   vColor = color;
 
   float viewWidth = u_viewRange.y - u_viewRange.x;
-  
+
+  // If the event is smaller than 1px, don't render it.
+  // Only cull every second event to avoid everything dissapearing.
+  float pixelWidth = (duration / viewWidth) * u_resolution.x;
+  if (pixelWidth < 1.0) {
+    if (mod(instanceCmdId, 2.0) == 0.0) {
+      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+      return;
+    }
+  }
+
   float worldX = instanceStart + (position.x * duration);
   
   // TODO(ziad):  Figure out how to handle different rows (e.g. row is passed as a uniform if const).
