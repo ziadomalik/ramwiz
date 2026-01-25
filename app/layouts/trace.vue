@@ -1,7 +1,6 @@
 <template>
   <UDashboardGroup>
     <UDashboardSidebar :ui="{ body: 'p-0 gap-0' }">
-      <!-- <div :style="{ 'padding-top': PADDING_TOP }" class="border-b border-neutral-800"></div> -->
       <div :style="{ height: PADDING_TOP }">
         <Toolbar />
         <div class="border-b border-neutral-800 mt-px"></div>
