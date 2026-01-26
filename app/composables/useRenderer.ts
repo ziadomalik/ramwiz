@@ -5,8 +5,7 @@
 // ----
 
 import createREGL from 'regl';
-import { getSessionInfoHandler, getTraceView, loadCommandConfig } from '~/lib/backend';
-import type { CommandConfig } from '~/lib/backend';
+import type { CommandConfig } from '@/composables/useBackend';
 import { useUIStore } from '~/stores/ui';
 
 const gridVert = `
@@ -170,8 +169,10 @@ interface DrawProps {
   instances: number;
 }
 
-export const useRenderer = (canvas: Ref<HTMLCanvasElement | null>) => {
+export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
   const uiStore = useUIStore();
+  const { trace, store } = useBackend();
+
   let regl: createREGL.Regl | null = null;
 
   // Buffers for the instance data.
@@ -310,7 +311,7 @@ export const useRenderer = (canvas: Ref<HTMLCanvasElement | null>) => {
       loadedCount = 0;
       chunkIndex.length = 0;
 
-      const header = await getSessionInfoHandler();
+      const header = await trace.getHeader();
       if (!header) return;
 
       const totalEntries = header.num_entries;
@@ -320,7 +321,7 @@ export const useRenderer = (canvas: Ref<HTMLCanvasElement | null>) => {
       startBuffer = regl.buffer({ length: totalEntries * 4, type: 'float', usage: 'dynamic' });
       cmdBuffer = regl.buffer({ length: totalEntries, type: 'uint8', usage: 'dynamic' });
 
-      const config = await loadCommandConfig();
+      const config = await store.loadCommandConfig();
 
       if (config) {
         lookupTexture = createLookupTexture(regl, config);
@@ -330,7 +331,7 @@ export const useRenderer = (canvas: Ref<HTMLCanvasElement | null>) => {
       const CHUNK_SIZE = 50_000;
       const START_TIME = 300;
 
-      const firstChunk = await getTraceView(0, 1);
+      const firstChunk = await trace.getEntries(0, 1);
       const firstData = decodeTraceData(firstChunk);
       if (firstData.count > 0) {
         viewState.duration = START_TIME;
@@ -347,7 +348,7 @@ export const useRenderer = (canvas: Ref<HTMLCanvasElement | null>) => {
 
         const count = Math.min(CHUNK_SIZE, totalEntries - offset);
 
-        const buffer = await getTraceView(offset, count);
+        const buffer = await trace.getEntries(offset, count);
         const data = decodeTraceData(buffer);
 
         if (data.count > 0) {

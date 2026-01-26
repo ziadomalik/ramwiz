@@ -35,8 +35,9 @@
   </div>
 </template>
 <script setup lang="ts">
-import { loadDictionaryHandler } from '@/lib/backend';
-import type { CommandConfig } from '@/lib/backend';
+import type { CommandConfig } from '@/composables/useBackend';
+
+const { trace } = useBackend();
 
 const COLORS = [
   '#A8D8EA', '#FFCAB1', '#B5EAD7', '#E2B6CF',
@@ -58,7 +59,7 @@ if (!sessionStore.hasHeader) {
 }
 
 const { pending } = await useAsyncData('dictionary', async () => {
-  const dictionary = await loadDictionaryHandler();
+  const dictionary = await trace.getDictionary();
   sessionStore.setDictionary(dictionary);
 
   const savedConfig = await sessionStore.loadSavedCommandConfig();

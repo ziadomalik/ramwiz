@@ -6,11 +6,12 @@
 </template>
 
 <script setup lang="ts">
-import type { FileMetadata } from '@/lib/backend';
-import { loadTraceDialog, loadTraceHandler } from '@/lib/backend';
+import type { FileMetadata } from '@/composables/useBackend';
+import useBackend from '@/composables/useBackend';
 
 const fileMetadata = ref<FileMetadata | null>(null);
 const sessionStore = useSessionStore();
+const { trace } = useBackend();
 
 // To trick the UFileUpload component into rendering the selected file.
 // Would rather do that hack than implement a custom component lol.
@@ -25,7 +26,7 @@ const disabled = computed(() => !fileMetadata.value);
 
 const loadTrace = async () => {
   fileMetadata.value = null;
-  fileMetadata.value = await loadTraceDialog();
+  fileMetadata.value = await trace.openFileDialog();
   console.log(fileMetadata.value);
 }
 
@@ -38,7 +39,7 @@ const continueToSetup = async () => {
       throw new Error('Trace file not selected');
     }
 
-    const header = await loadTraceHandler(fileMetadata.value.path);
+    const header = await trace.startSession(fileMetadata.value.path);
 
     if (!header) {
       throw new Error('Failed to load trace header');

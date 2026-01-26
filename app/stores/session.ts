@@ -5,8 +5,7 @@
 /// ----
 
 import { defineStore } from 'pinia';
-import type { Header, Dictionary, CommandConfig } from '@/lib/backend';
-import { closeSessionHandler, loadCommandConfig, saveCommandConfig } from '@/lib/backend';
+import type { Header, Dictionary, CommandConfig } from '@/composables/useBackend';
 
 export const useSessionStore = defineStore('session', {
   state: () => ({
@@ -44,19 +43,23 @@ export const useSessionStore = defineStore('session', {
     },
 
     async setCommandConfig(config: CommandConfig) {
+      const { store } = useBackend();
       this.commandConfig = config;
-      await saveCommandConfig(config);
+      await store.saveCommandConfig(config);
     },
 
     async loadSavedCommandConfig(): Promise<CommandConfig | null> {
-      this.commandConfig= await loadCommandConfig();
+      const { store } = useBackend();
+      this.commandConfig = await store.loadCommandConfig();
       return this.commandConfig;
     },
 
     async close() {
+      const { trace } = useBackend()
+
       this.header = null;
       this.dictionary = null;
-      await closeSessionHandler();
+      await trace.closeSession();
     },
   },
 });
