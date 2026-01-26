@@ -1,9 +1,9 @@
 I am not really following a strict roadmap/todo list as I am developing the MVP.
 This is just a TODO list for personal reference:
 
--[] (25.01.2026) Refactor `backend.ts` to be a Nuxt composable.
-  - Create a predictable naming convention instead of being all over the place with 'loadXXHandler' and `getXX`.
-  - Look into integrating Tauri specta to avoid having to maintain two APIs (in `lib.rs` and `backend.ts`)
+-[x] (25.01.2026) Refactor `backend.ts` to be a Nuxt composable.
+  - [x] Create a predictable naming convention instead of being all over the place with 'loadXXHandler' and `getXX`.
+  - [ ] Look into integrating Tauri specta to avoid having to maintain two APIs (in `lib.rs` and `backend.ts`)
 -[] (25.01.2026) Add a unified way to manage stores & sessions.
   - There's a bug where updating command settings only takes effect after restarting a session.
 -[] (25.01.2026) Add a screen to allow users to add information on memory hierarchy.
