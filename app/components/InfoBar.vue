@@ -4,6 +4,10 @@
       <div class="flex flex-col gap-1.5">
         <div class="flex items-center justify-between gap-1.5">
           <div class="flex gap-1.5">
+            <span class="text-neutral-400">Current LOD: </span>
+            <span class="font-bold">{{ props.currentLod }}</span>
+          </div>
+          <div class="flex gap-1.5 border-l border-neutral-800 pl-2 ">
             <span class="text-neutral-400">Events Loaded: </span>
             <div class="flex gap-1.5 w-28 justify-end">
               <span class="font-bold">{{ formattedEvents }}</span>
@@ -25,6 +29,7 @@ const props = withDefaults(defineProps<{
   fps: number;
   eventCount: number;
   totalEvents: number;
+  currentLod: string;
 }>(), {
   fps: 0,
   eventCount: 0,

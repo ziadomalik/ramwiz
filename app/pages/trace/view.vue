@@ -5,6 +5,7 @@
       :fps="stats.fps" 
       :event-count="stats.eventCount" 
       :total-events="stats.totalEvents"
+      :current-lod="stats.currentLod"
     />
     <TraceViewTimeline 
       class="sticky top-0 z-10" 

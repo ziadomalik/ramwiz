@@ -68,16 +68,6 @@ void main() {
 
   float viewWidth = u_viewRange.y - u_viewRange.x;
 
-  // If the event is smaller than 1px, don't render it.
-  // Only cull every second event to avoid everything dissapearing.
-  float pixelWidth = (duration / viewWidth) * u_resolution.x;
-  if (pixelWidth < 1.0) {
-    if (mod(instanceCmdId, 2.0) == 0.0) {
-      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-      return;
-    }
-  }
-
   float worldX = instanceStart + (position.x * duration);
   
   // TODO(ziad):  Figure out how to handle different rows (e.g. row is passed as a uniform if const).
@@ -167,6 +157,22 @@ interface DrawProps {
   viewRange: [number, number];
   offset: number;
   instances: number;
+  startBuffer: createREGL.Buffer;
+  cmdBuffer: createREGL.Buffer;
+}
+
+const LOD_FACTORS = [1, 2];
+const NUM_LODS = LOD_FACTORS.length;
+
+// Target max events per pixel before switching to coarser LOD
+const EVENTS_PER_PIXEL_THRESHOLD = 2000;
+
+interface LODLevel {
+  startBuffer: createREGL.Buffer;
+  cmdBuffer: createREGL.Buffer;
+  chunkIndex: { time: number; offset: number }[];
+  loadedCount: number;
+  totalCount: number;
 }
 
 export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
@@ -175,16 +181,10 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
 
   let regl: createREGL.Regl | null = null;
 
-  // Buffers for the instance data.
-  let startBuffer: createREGL.Buffer;
-  let cmdBuffer: createREGL.Buffer;
+  const lodLevels: LODLevel[] = [];
+
   let lookupTexture: createREGL.Texture;
 
-  // We maintain a list of chunks and their offsets so we dont have to iterate over the entire buffer when drawing.
-  // We store the time of the chunk and the offset of the first event in the chunk.
-  const chunkIndex: { time: number, offset: number }[] = [];
-
-  let loadedCount = 0;
   let abortController: AbortController | null = null;
 
   const viewState = reactive({
@@ -205,6 +205,8 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
     eventCount: 0,
     totalEvents: 0,
     progress: 0,
+    currentLod: "",
+    instancesDrawn: 0,
   })
 
   // Handlers for the timeline bounds.
@@ -308,8 +310,7 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
     const signal = abortController.signal;
 
     try {
-      loadedCount = 0;
-      chunkIndex.length = 0;
+      lodLevels.length = 0;
 
       const header = await trace.getHeader();
       if (!header) return;
@@ -317,9 +318,18 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
       const totalEntries = header.num_entries;
       stats.totalEvents = totalEntries;
 
-      // We allocate the full number of entries on the GPU immediately. (i.e. 4 bytes for start, 1 byte for cmd)
-      startBuffer = regl.buffer({ length: totalEntries * 4, type: 'float', usage: 'dynamic' });
-      cmdBuffer = regl.buffer({ length: totalEntries, type: 'uint8', usage: 'dynamic' });
+      for (let i = 0; i < NUM_LODS; i++) {
+        const factor = LOD_FACTORS[i]!;
+        const lodCount = Math.ceil(totalEntries / factor);
+        
+        lodLevels.push({
+          startBuffer: regl.buffer({ length: lodCount * 4, type: 'float', usage: 'dynamic' }),
+          cmdBuffer: regl.buffer({ length: lodCount, type: 'uint8', usage: 'dynamic' }),
+          chunkIndex: [],
+          loadedCount: 0,
+          totalCount: lodCount
+        });
+      }
 
       const config = await store.loadCommandConfig();
 
@@ -327,7 +337,7 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
         lookupTexture = createLookupTexture(regl, config);
       }
 
-      // Load 100k events at a time 
+      // Load 50k events at a time 
       const CHUNK_SIZE = 50_000;
       const START_TIME = 300;
 
@@ -338,8 +348,19 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
         // The 0.01 adds a small bit of padding to the left so we see the start of the timeline.
         viewState.start = -viewState.duration * 0.01;
 
-        chunkIndex.push({ time: firstData.starts[0] ?? 0.0, offset: 0 });
+        for (let i = 0; i < NUM_LODS; i++) {
+          lodLevels[i]!.chunkIndex.push({ time: firstData.starts[0] ?? 0.0, offset: 0 });
+        }
       }
+
+      const lodTempStarts: Float32Array[] = LOD_FACTORS.map(f => new Float32Array(Math.ceil(CHUNK_SIZE / f)));
+      const lodTempCmds: Uint8Array[] = LOD_FACTORS.map(f => new Uint8Array(Math.ceil(CHUNK_SIZE / f)));
+      
+      // Track offsets for each LOD level separately
+      const lodOffsets = new Array(NUM_LODS).fill(0);
+      
+      // Global index for proper decimation alignment
+      let globalEventIndex = 0;
 
       // Load the chunks until we reach the end of the buffer.
       let offset = 0;
@@ -352,28 +373,50 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
         const data = decodeTraceData(buffer);
 
         if (data.count > 0) {
-          if (offset > 0) {
-            chunkIndex.push({ time: data.starts[0]!, offset: offset });
-          }
-
           // Update the max time if we've seen a new event.
           const lastTime = data.starts[data.count - 1]!;
           if (lastTime > viewState.maxTime) {
             viewState.maxTime = lastTime;
-
-            // Limit max zoom to the full trace range + 20% padding on each side.
             viewState.maxDuration = (viewState.maxTime - viewState.minTime) * 1.2;
+          }
+
+          // Process each LOD level
+          for (let lodIdx = 0; lodIdx < NUM_LODS; lodIdx++) {
+            const factor = LOD_FACTORS[lodIdx]!;
+            const lod = lodLevels[lodIdx]!;
+            const tempStarts = lodTempStarts[lodIdx]!;
+            const tempCmds = lodTempCmds[lodIdx]!;
+            
+            let lodWriteIdx = 0;
+            
+            for (let i = 0; i < data.count; i++) {
+              const globalIdx = globalEventIndex + i;
+              if (globalIdx % factor === 0) {
+                tempStarts[lodWriteIdx] = data.starts[i]!;
+                tempCmds[lodWriteIdx] = data.cmds[i]!;
+                lodWriteIdx++;
+              }
+            }
+
+            if (lodWriteIdx > 0) {
+              if (lodOffsets[lodIdx] > 0 && offset > 0) {
+                lod.chunkIndex.push({ time: tempStarts[0]!, offset: lodOffsets[lodIdx] });
+              }
+
+              lod.startBuffer.subdata(tempStarts.subarray(0, lodWriteIdx), lodOffsets[lodIdx] * 4);
+              lod.cmdBuffer.subdata(tempCmds.subarray(0, lodWriteIdx), lodOffsets[lodIdx] * 1);
+              
+              lodOffsets[lodIdx] += lodWriteIdx;
+              lod.loadedCount = lodOffsets[lodIdx];
+            }
           }
         }
 
-        startBuffer.subdata(data.starts, offset * 4);
-        cmdBuffer.subdata(data.cmds, offset * 1);
-
+        globalEventIndex += data.count;
         offset += count;
-        loadedCount = offset;
 
-        stats.progress = loadedCount / totalEntries;
-        stats.eventCount = loadedCount;
+        stats.progress = offset / totalEntries;
+        stats.eventCount = lodLevels[0]?.loadedCount ?? 0;
 
         await new Promise(resolve => requestAnimationFrame(resolve));
       }
@@ -392,9 +435,7 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
         extensions: ['angle_instanced_arrays', 'oes_texture_float']
       });
 
-      // Need to initialize these to dummy values to avoid errors.
-      startBuffer = regl.buffer(0);
-      cmdBuffer = regl.buffer(0);
+      // Initialize lookup texture to dummy value
       lookupTexture = regl.texture({ width: 1, height: 1 });
 
       const gridBuffer = regl.buffer({ length: 0, type: 'float', usage: 'dynamic' });
@@ -422,12 +463,12 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
         attributes: {
           position: [[0, 0], [1, 0], [0, 1], [0, 1], [1, 0], [1, 1]],
           instanceStart: {
-            buffer: () => startBuffer,
+            buffer: (ctx: any, props: DrawProps) => props.startBuffer,
             divisor: 1,
             offset: (ctx: any, props: DrawProps) => props.offset * 4
           },
           instanceCmdId: {
-            buffer: () => cmdBuffer,
+            buffer: (ctx: any, props: DrawProps) => props.cmdBuffer,
             divisor: 1,
             normalized: false,
             offset: (ctx: any, props: DrawProps) => props.offset * 1
@@ -477,10 +518,55 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
         const viewStart = viewState.start;
         const viewEnd = viewState.start + viewState.duration;
 
-        // The culling logic is as follows:
-        // 1. Find the start and end offsets of the chunk that contains the view range.
-        // 2. Draw the chunk.
-        // 3. Repeat for the next chunk until we reach the end of the buffer.
+        // Skip rendering if no LOD levels are loaded
+        if (lodLevels.length === 0 || lodLevels[0]!.loadedCount === 0) {
+          frameCount++;
+          const now = performance.now();
+          if (now - lastFpsUpdate >= 1000) {
+            stats.fps = Math.round(frameCount * 1000 / (now - lastFpsUpdate));
+            frameCount = 0;
+            lastFpsUpdate = now;
+          }
+          return;
+        }
+
+        // Select appropriate LOD based on events per pixel
+        const lod0 = lodLevels[0]!;
+        let estimatedEventsInView = lod0.loadedCount;
+        
+        let viewStartOffset = 0;
+        let viewEndOffset = lod0.loadedCount;
+        
+        for (let i = 0; i < lod0.chunkIndex.length; i++) {
+          if (lod0.chunkIndex[i]!.time > viewStart) break;
+          viewStartOffset = lod0.chunkIndex[i]!.offset;
+        }
+        for (let i = 0; i < lod0.chunkIndex.length; i++) {
+          if (lod0.chunkIndex[i]!.time > viewEnd) {
+            viewEndOffset = lod0.chunkIndex[i]!.offset;
+            break;
+          }
+        }
+        estimatedEventsInView = viewEndOffset - viewStartOffset;
+
+        const canvasWidth = canvas.value?.width ?? 1920;
+        const eventsPerPixel = estimatedEventsInView / canvasWidth;
+
+        let selectedLod = 0;
+        for (let i = 0; i < NUM_LODS; i++) {
+          const factor = LOD_FACTORS[i]!;
+          const lodEventsPerPixel = eventsPerPixel / factor;
+          if (lodEventsPerPixel <= EVENTS_PER_PIXEL_THRESHOLD) {
+            selectedLod = i;
+            break;
+          }
+          // If even the coarsest LOD has too many events, use it anyway
+          selectedLod = i;
+        }
+
+        const lod = lodLevels[selectedLod]!;
+        const chunkIndex = lod.chunkIndex;
+        const loadedCount = lod.loadedCount;
 
         let startOffset = 0;
         let endOffset = loadedCount;
@@ -504,10 +590,15 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
 
         const count = Math.max(0, endOffset - startOffset);
 
+        stats.currentLod = `1:${LOD_FACTORS[selectedLod] ?? 1}`;
+        stats.instancesDrawn = count;
+
         draw({
           viewRange: [viewStart, viewEnd],
           offset: startOffset,
-          instances: count
+          instances: count,
+          startBuffer: lod.startBuffer,
+          cmdBuffer: lod.cmdBuffer
         });
 
         frameCount++;
