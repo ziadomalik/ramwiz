@@ -1,5 +1,5 @@
 <template>
-  <div class="w-full flex gap-2">
+  <div class="w-full flex gap-2 bg-neutral-900">
     <UButton 
       class="rounded-none cursor-pointer" 
       label="New Trace"
