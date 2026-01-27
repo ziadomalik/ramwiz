@@ -90,6 +90,11 @@ async function loadCommandConfig(): Promise<CommandConfig | null> {
 // TRACE VIEW //
 //------------//
 
+export interface CommandConfig {
+  colors: Record<number, string>;
+  clockPeriods: Record<number, number | undefined>;
+}
+
 // Get a number of trace entries starting at a specific CLK
 async function getEntries(start: number, count: number): Promise<Uint8Array> {
   return invoke<Uint8Array>('get_trace_view', { start, count });
@@ -98,6 +103,21 @@ async function getEntries(start: number, count: number): Promise<Uint8Array> {
 /// Given a CLK, get the index of the entry at that specific CLK
 async function getEntryIndexByTime(time: number): Promise<number> {
   return invoke<number>('get_entry_index_by_time', { time: Math.floor(time) });
+}
+
+//---------------//
+// MEMORY LAYOUT //
+//---------------//
+
+export interface MemoryLayout {
+  numChannels: number,
+  numBankgroups: number,
+  numBanks: number,
+}
+
+async function saveMemoryLayout(memoryLayout: MemoryLayout) {
+  const store = await load(STORE_PATH, { defaults: {}, autoSave: true });
+  await store.set('memoryLayout', memoryLayout);
 }
 
 export default function useBackend() {
@@ -112,6 +132,7 @@ export default function useBackend() {
       getEntryIndexByTime
     },
     store: {
+      saveMemoryLayout,
       saveCommandConfig,
       loadCommandConfig,
     },

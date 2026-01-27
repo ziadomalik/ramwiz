@@ -46,7 +46,7 @@ const continueToSetup = async () => {
     }
 
     sessionStore.setHeader(header);
-    navigateTo('/trace/setup');
+    navigateTo('/trace/setup/commands');
   } finally {
     loading.value = false;
   }

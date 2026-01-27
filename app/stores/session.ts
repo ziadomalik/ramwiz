@@ -5,12 +5,12 @@
 /// ----
 
 import { defineStore } from 'pinia';
-import type { Header, Dictionary, CommandConfig } from '@/composables/useBackend';
 
 export const useSessionStore = defineStore('session', {
   state: () => ({
     header: null as Header | null,
     dictionary: null as Dictionary | null,
+    memoryLayout: null as MemoryLayout | null,
     commandConfig: null as CommandConfig | null,
   }),
 
@@ -18,6 +18,7 @@ export const useSessionStore = defineStore('session', {
     hasHeader: (state): boolean => state.header !== null,
     hasDictionary: (state): boolean => state.dictionary !== null,
     hasCommandConfig: (state): boolean => state.commandConfig !== null,
+    hasMemoryLayout: (state): boolean => state.memoryLayout !== null,
     isReady: (state): boolean => state.header !== null && state.dictionary !== null,
     
     getCommandName: (state) => (commandId: number): string | undefined => {
@@ -40,6 +41,12 @@ export const useSessionStore = defineStore('session', {
 
     setDictionary(dictionary: Dictionary) {
       this.dictionary = dictionary;
+    },
+
+    async setMemoryLayout(memoryLayout: MemoryLayout) {
+      const { store } = useBackend();
+      this.memoryLayout = memoryLayout; 
+      await store.saveMemoryLayout(memoryLayout);
     },
 
     async setCommandConfig(config: CommandConfig) {

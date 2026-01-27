@@ -17,10 +17,11 @@
 
 <script setup lang="ts">
 import type { TreeItem } from '@nuxt/ui'
-import { useUIStore } from '~/stores/ui'
 
 const PADDING_TOP = '25px'
 const uiStore = useUIStore()
+const sessionStore = useSessionStore()
+
 const treeContainer = ref<HTMLElement | null>(null)
 
 const updateLayout = () => {
@@ -66,34 +67,16 @@ onUnmounted(() => {
   window.removeEventListener('scroll', updateLayout, true)
 })
 
-const items = ref<TreeItem[]>([
-  {
-    label: 'Channel 0',
+const items = computed<TreeItem[]>(() => (
+  Array(sessionStore.memoryLayout?.numChannels).fill({}).map((_, chIdx) => ({
+    label: `Channel ${chIdx}`,
     defaultExpanded: true,
-    children: [
-      {
-        label: 'Bankgroup 0',
-        children: [
-          {
-            label: 'Bank 0',
-          },
-          {
-            label: 'Bank 1',
-          }
-        ]
-      },
-      {
-        label: 'Bankgroup 1',
-        children: [
-          {
-            label: 'Bank 0',
-          },
-          {
-            label: 'Bank 1',
-          }
-        ]
-      }
-    ]
-  },
-])
+    children: Array(sessionStore.memoryLayout?.numBankgroups).fill({}).map((_, bgIdx) => ({
+      label: `Bankgroup ${bgIdx}`,
+      children: Array(sessionStore.memoryLayout?.numBanks).fill({}).map((_, bIdx) => ({
+        label: `Bank ${bIdx}`
+      }))
+    }))
+  }))
+))
 </script>
