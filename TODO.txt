@@ -14,4 +14,4 @@ This is just a TODO list for personal reference:
   - Whether to calculate swimlanes in Rust and send them to the FE...
   - ...or just send over the entire address vector over and calculate the y index based on that.
   - Figure out if there's a neat WebGL trick one could use to calculate the y index while rendering.
--[] (25.01.2026) Investigate the brief stutter when zooming out for the first time, culling doesn't seem to fix it.
+-[x] (25.01.2026) Investigate the brief stutter when zooming out for the first time, culling doesn't seem to fix it.
