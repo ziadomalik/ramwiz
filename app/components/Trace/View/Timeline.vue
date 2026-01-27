@@ -19,11 +19,16 @@ const props = defineProps<{
 const container = ref<HTMLDivElement | null>(null);
 const canvas = ref<HTMLCanvasElement | null>(null);
 
-function formatTick(value: number): string {
-  if (Math.abs(value) >= 1e9) return (value / 1e9).toFixed(1) + 'G';
-  if (Math.abs(value) >= 1e6) return (value / 1e6).toFixed(1) + 'M';
-  if (Math.abs(value) >= 1e3) return (value / 1e3).toFixed(1) + 'k';
-  return value.toFixed(0);
+function formatTick(value: number, step: number): string {
+  const abs = Math.abs(value);
+
+  if (abs >= 1e9 && step >= 1e8) return (value / 1e9).toFixed(1) + 'G';
+  if (abs >= 1e6 && step >= 1e5) return (value / 1e6).toFixed(1) + 'M';
+  if (abs >= 1e3 && step >= 1e2) return (value / 1e3).toFixed(1) + 'k';
+
+  const decimalPlaces = step >= 1 ? 0 : Math.ceil(-Math.log10(step));
+  
+  return value.toFixed(decimalPlaces);
 }
 
 function getStepSize(duration: number, width: number) {
@@ -40,15 +45,9 @@ function getStepSize(duration: number, width: number) {
 }
 
 const draw = () => {
-  if (!canvas.value || !container.value) {
-    return;
-  }
-
+  if (!canvas.value || !container.value) return;
   const ctx = canvas.value.getContext('2d');
-
-  if (!ctx) {
-    return;
-  }
+  if (!ctx) return;
 
   const width = container.value.clientWidth;
   const height = container.value.clientHeight;
@@ -64,6 +63,7 @@ const draw = () => {
   ctx.clearRect(0, 0, width, height);
 
   const { start, duration } = props.viewState;
+  
   const step = getStepSize(duration, width);
 
   const startTick = Math.ceil(start / step) * step;
@@ -71,26 +71,23 @@ const draw = () => {
 
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.fillStyle = '#52525c'; // TODO(ziad): text-zinc-700
+  ctx.fillStyle = '#52525c';
   ctx.font = '10px "Jetbrains Mono", monospace';
-
   ctx.beginPath();
-  ctx.strokeStyle = '#52525c'; // TODO(ziad): border-zinc-700
+  ctx.strokeStyle = '#52525c';
   ctx.lineWidth = 1;
 
-  for (let tick = startTick; tick < endTick; tick += step) {
+  const epsilon = step / 1000;
+
+  for (let tick = startTick; tick < endTick + epsilon; tick += step) {
+    if (tick < props.viewState.minTime || tick > props.viewState.maxTime) continue;
+    
     const x = ((tick - start) / duration) * width;
 
-    if (tick < props.viewState.minTime || tick > props.viewState.maxTime) {
-      continue;
-    }
-    
-    // Draw the tick line.
     ctx.moveTo(x, 0);
     ctx.lineTo(x, 6);
 
-    // Draw the tick label.
-    ctx.fillText(formatTick(tick), x + 4, 4);
+    ctx.fillText(formatTick(tick, step), x + 4, 4);
   }
 
   ctx.stroke();
