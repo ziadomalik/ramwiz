@@ -6,7 +6,7 @@
         <div class="border-b border-neutral-800 mt-px"></div>
       </div>
       <div ref="treeContainer">
-        <UTree size="xl" :items="items" :ui="{ link: 'rounded-none before:rounded-none', listWithChildren: 'pb-24 border-b border-neutral-800', itemWithChildren: 'ps-0' }" />
+        <UTree size="xl" :items="items" :ui="{ root: 'border-b border-neutral-800', link: 'rounded-none before:rounded-none', itemWithChildren: 'ps-0' }" />
       </div>
     </UDashboardSidebar>
     <UDashboardPanel>
@@ -25,7 +25,7 @@ const treeContainer = ref<HTMLElement | null>(null)
 
 const updateLayout = () => {
   if (!treeContainer.value) return
-  const rows = treeContainer.value.querySelectorAll('ul[data-slot="listWithChildren"]')
+  const rows = treeContainer.value.querySelectorAll('li[role="presentation"], button[data-slot="link"]')
   const layout = Array.from(rows).map(row => {
     const rect = row.getBoundingClientRect()
     return { top: rect.top, height: rect.height }
@@ -72,33 +72,27 @@ const items = ref<TreeItem[]>([
     defaultExpanded: true,
     children: [
       {
-        label: 'Rank 0',
-        defaultExpanded: true,
+        label: 'Bankgroup 0',
         children: [
           {
-            label: 'Bankgroup 0',
-            children: [
-              {
-                label: 'Bank 0',
-              },
-              {
-                label: 'Bank 1',
-              }
-            ]
+            label: 'Bank 0',
           },
           {
-            label: 'Bankgroup 1',
-            children: [
-              {
-                label: 'Bank 0',
-              },
-              {
-                label: 'Bank 1',
-              }
-            ]
+            label: 'Bank 1',
           }
         ]
       },
+      {
+        label: 'Bankgroup 1',
+        children: [
+          {
+            label: 'Bank 0',
+          },
+          {
+            label: 'Bank 1',
+          }
+        ]
+      }
     ]
   },
 ])
