@@ -161,7 +161,7 @@ interface DrawProps {
   cmdBuffer: createREGL.Buffer;
 }
 
-const LOD_FACTORS = [1, 2];
+const LOD_FACTORS = [1, 2, 3];
 const NUM_LODS = LOD_FACTORS.length;
 
 // Target max events per pixel before switching to coarser LOD
