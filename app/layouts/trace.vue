@@ -5,10 +5,14 @@
         <Toolbar />
         <div class="border-b border-neutral-800 mt-px"></div>
       </div>
-      <div ref="treeContainer">
+      <div ref="treeContainer" class="h-full overflow-auto">
         <UTree size="xl" :items="items" :ui="{ root: 'border-b border-neutral-800', link: 'rounded-none before:rounded-none', itemWithChildren: 'ps-0' }" >
           <template #item-label="{ item }">
             {{ item.name }}
+          </template>
+          <template #item-leading>
+            <!-- DONT SHOVE YOUR DISGUSTING ICONS DOWN MY THROAT NUXT UI -->
+            <div></div>
           </template>
         </UTree>
       </div>

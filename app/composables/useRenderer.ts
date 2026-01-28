@@ -165,7 +165,7 @@ const LOD_FACTORS = [1, 2, 3];
 const NUM_LODS = LOD_FACTORS.length;
 
 // Target max events per pixel before switching to coarser LOD
-const EVENTS_PER_PIXEL_THRESHOLD = 2000;
+const EVENTS_PER_PIXEL_THRESHOLD = 1500;
 
 interface LODLevel {
   startBuffer: createREGL.Buffer;
