@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use tauri::{App, AppHandle, Runtime};
+use tauri::{AppHandle, Runtime};
 use tauri_plugin_store::StoreExt;
 
 use crate::trace::TraceLoader;
