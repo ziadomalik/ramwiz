@@ -5,14 +5,13 @@
 /// Author: Ziad Malik
 /// Email: zmalik@ethz.ch
 /// ----
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::{App, AppHandle, Runtime};
 use tauri_plugin_store::StoreExt;
 
-use crate::trace::{TraceLoader};
+use crate::trace::TraceLoader;
 
 const STORE_PATH: &str = "ramwiz-config.json";
 
@@ -68,9 +67,7 @@ pub fn load_command_config<R: Runtime>(
     }
 }
 
-pub fn load_memory_layout<R: Runtime>(
-    app: &AppHandle<R>,
-) -> Result<Option<MemoryLayout>, String> {
+pub fn load_memory_layout<R: Runtime>(app: &AppHandle<R>) -> Result<Option<MemoryLayout>, String> {
     let store = app.store(STORE_PATH).map_err(|e| e.to_string())?;
 
     if let Some(val) = store.get("memoryLayout") {
@@ -82,34 +79,36 @@ pub fn load_memory_layout<R: Runtime>(
 }
 
 pub fn set_command_config<R: Runtime>(
-  app: &AppHandle<R>,
-  session: &SessionState,
-  command_config: CommandConfig,
+    app: &AppHandle<R>,
+    session: &SessionState,
+    command_config: CommandConfig,
 ) -> Result<(), String> {
-  let store = app.store(STORE_PATH).map_err(|e| e.to_string())?;
-  let command_config_value = serde_json::to_value(command_config.clone()).map_err(|e| e.to_string())?;
+    let store = app.store(STORE_PATH).map_err(|e| e.to_string())?;
+    let command_config_value =
+        serde_json::to_value(command_config.clone()).map_err(|e| e.to_string())?;
 
-  store.set("commandConfig", command_config_value);
+    store.set("commandConfig", command_config_value);
 
-  let mut guard = session.config.lock().map_err(|e| e.to_string())?;
-  *guard = Some(command_config);
+    let mut guard = session.config.lock().map_err(|e| e.to_string())?;
+    *guard = Some(command_config);
 
-  Ok(())
+    Ok(())
 }
 
 pub fn set_memory_layout<R: Runtime>(
-  app: &AppHandle<R>,
-  session: &SessionState,
-  memory_layout: MemoryLayout,
+    app: &AppHandle<R>,
+    session: &SessionState,
+    memory_layout: MemoryLayout,
 ) -> Result<(), String> {
-  let store = app.store(STORE_PATH).map_err(|e| e.to_string())?;
-  let memory_layout_value = serde_json::to_value(memory_layout.clone()).map_err(|e| e.to_string())?;
+    let store = app.store(STORE_PATH).map_err(|e| e.to_string())?;
+    let memory_layout_value =
+        serde_json::to_value(memory_layout.clone()).map_err(|e| e.to_string())?;
 
-  store.set("memoryLayout", memory_layout_value);
+    store.set("memoryLayout", memory_layout_value);
 
-  let mut guard = session.memory.lock().map_err(|e| e.to_string())?;
+    let mut guard = session.memory.lock().map_err(|e| e.to_string())?;
 
-  *guard = Some(memory_layout);
+    *guard = Some(memory_layout);
 
-  Ok(())
+    Ok(())
 }

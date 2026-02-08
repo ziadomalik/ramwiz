@@ -1,11 +1,11 @@
-mod trace;
 mod session;
+mod trace;
 
 use std::path::PathBuf;
 use tauri::ipc::Response;
 use tauri::{AppHandle, State};
 
-use crate::session::{SessionState, CommandConfig, MemoryLayout};
+use crate::session::{CommandConfig, MemoryLayout, SessionState};
 
 #[tauri::command]
 fn load_trace(
@@ -36,7 +36,7 @@ fn get_command_config(
     session: State<'_, SessionState>,
 ) -> Result<Option<CommandConfig>, String> {
     let guard = session.config.lock().map_err(|e| e.to_string())?;
-    
+
     if let Some(config) = guard.as_ref() {
         return Ok(Some(config.clone()));
     }
