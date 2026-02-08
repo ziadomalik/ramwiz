@@ -1,7 +1,6 @@
 import type { FileInfo } from '@tauri-apps/plugin-fs';
 import { stat } from '@tauri-apps/plugin-fs';
 import { open } from '@tauri-apps/plugin-dialog';
-import { load } from '@tauri-apps/plugin-store';
 import { invoke } from '@tauri-apps/api/core';
 
 //-------------//
@@ -65,27 +64,6 @@ async function closeSession(): Promise<void> {
   return invoke<void>('close_session');
 }
 
-//-----------//
-// USER DATA //
-//-----------//
-
-export interface CommandConfig {
-  colors: Record<number, string>;
-  clockPeriods: Record<number, number | undefined>;
-}
-
-const STORE_PATH = "ramwiz-config.json";
-
-async function saveCommandConfig(config: CommandConfig): Promise<void> {
-  const store = await load(STORE_PATH, { defaults: {}, autoSave: true });
-  await store.set('commandConfig', config);
-}
-
-async function loadCommandConfig(): Promise<CommandConfig | null> {
-  const store = await load(STORE_PATH, { defaults: {}, autoSave: false });
-  return await store.get('commandConfig') ?? null as CommandConfig | null;
-}
-
 //------------//
 // TRACE VIEW //
 //------------//
@@ -105,19 +83,35 @@ async function getEntryIndexByTime(time: number): Promise<number> {
   return invoke<number>('get_entry_index_by_time', { time: Math.floor(time) });
 }
 
-//---------------//
-// MEMORY LAYOUT //
-//---------------//
+//-----------//
+// USER DATA //
+//-----------//
 
-export interface MemoryLayout {
-  numChannels: number,
-  numBankgroups: number,
-  numBanks: number,
+export interface CommandConfig {
+  colors: Record<number, string>;
+  clockPeriods: Record<number, number | undefined>;
 }
 
-async function saveMemoryLayout(memoryLayout: MemoryLayout) {
-  const store = await load(STORE_PATH, { defaults: {}, autoSave: true });
-  await store.set('memoryLayout', memoryLayout);
+export interface MemoryLayout {
+  numChannels: number;
+  numBankgroups: number;
+  numBanks: number;
+}
+
+async function getCommandConfig(): Promise<CommandConfig | null> {
+  return invoke<CommandConfig | null>('get_command_config');
+}
+
+async function setCommandConfig(config: CommandConfig): Promise<void> {
+  return invoke<void>('set_command_config', { config });
+}
+
+async function getMemoryLayout(): Promise<MemoryLayout | null> {
+  return invoke<MemoryLayout | null>('get_memory_layout');
+}
+
+async function setMemoryLayout(layout: MemoryLayout): Promise<void> {
+  return invoke<void>('set_memory_layout', { layout });
 }
 
 export default function useBackend() {
@@ -132,9 +126,10 @@ export default function useBackend() {
       getEntryIndexByTime
     },
     store: {
-      saveMemoryLayout,
-      saveCommandConfig,
-      loadCommandConfig,
+      getCommandConfig,
+      setCommandConfig,
+      getMemoryLayout,
+      setMemoryLayout,
     },
   } 
 }

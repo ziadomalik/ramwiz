@@ -32,6 +32,8 @@ const sessionStore = useSessionStore()
 
 const treeContainer = ref<HTMLElement | null>(null)
 
+await useAsyncData('memoryLayout', async () => sessionStore.loadSavedMemoryLayout())
+
 const updateLayout = () => {
   if (!treeContainer.value) return
   const rows = treeContainer.value.querySelectorAll('li[role="presentation"], button[data-slot="link"]')

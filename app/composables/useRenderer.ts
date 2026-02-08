@@ -331,7 +331,7 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
         });
       }
 
-      const config = await store.loadCommandConfig();
+      const config = await store.getCommandConfig();
 
       if (config) {
         lookupTexture = createLookupTexture(regl, config);

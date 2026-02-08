@@ -46,19 +46,25 @@ export const useSessionStore = defineStore('session', {
     async setMemoryLayout(memoryLayout: MemoryLayout) {
       const { store } = useBackend();
       this.memoryLayout = memoryLayout; 
-      await store.saveMemoryLayout(memoryLayout);
+      await store.setMemoryLayout(memoryLayout);
     },
 
     async setCommandConfig(config: CommandConfig) {
       const { store } = useBackend();
       this.commandConfig = config;
-      await store.saveCommandConfig(config);
+      await store.setCommandConfig(config);
     },
 
     async loadSavedCommandConfig(): Promise<CommandConfig | null> {
       const { store } = useBackend();
-      this.commandConfig = await store.loadCommandConfig();
+      this.commandConfig = await store.getCommandConfig();
       return this.commandConfig;
+    },
+
+    async loadSavedMemoryLayout(): Promise<MemoryLayout | null> {
+      const { store } = useBackend();
+      this.memoryLayout = await store.getMemoryLayout();
+      return this.memoryLayout;
     },
 
     async close() {

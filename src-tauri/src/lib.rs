@@ -1,31 +1,11 @@
 mod trace;
-mod user_data;
+mod session;
 
 use std::path::PathBuf;
-use std::sync::Mutex;
 use tauri::ipc::Response;
 use tauri::{AppHandle, State};
 
-/// Holds the current session state i.e. the loaded trace file and its parsed data.
-pub struct SessionState {
-    pub loader: Mutex<Option<trace::TraceLoader>>,
-    pub config: Mutex<Option<user_data::CommandConfig>>,
-}
-
-impl SessionState {
-    pub fn new() -> Self {
-        Self {
-            loader: Mutex::new(None),
-            config: Mutex::new(None),
-        }
-    }
-}
-
-impl Default for SessionState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+use crate::session::{SessionState, CommandConfig, MemoryLayout};
 
 #[tauri::command]
 fn load_trace(
@@ -41,13 +21,60 @@ fn load_trace(
         *guard = Some(loader);
     }
 
-    let config = user_data::load_command_config(&app)?;
+    let config = session::load_command_config(&app)?;
     {
         let mut guard = session.config.lock().map_err(|e| e.to_string())?;
         *guard = config;
     }
 
     Ok(header)
+}
+
+#[tauri::command]
+fn get_command_config(
+    app: AppHandle,
+    session: State<'_, SessionState>,
+) -> Result<Option<CommandConfig>, String> {
+    let guard = session.config.lock().map_err(|e| e.to_string())?;
+    
+    if let Some(config) = guard.as_ref() {
+        return Ok(Some(config.clone()));
+    }
+
+    drop(guard);
+
+    session::load_command_config(&app)
+}
+
+#[tauri::command]
+fn set_command_config(
+    app: AppHandle,
+    session: State<'_, SessionState>,
+    config: CommandConfig,
+) -> Result<(), String> {
+    session::set_command_config(&app, &session, config).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_memory_layout(
+    app: AppHandle,
+    session: State<'_, SessionState>,
+) -> Result<Option<MemoryLayout>, String> {
+    let guard = session.memory.lock().map_err(|e| e.to_string())?;
+    if let Some(layout) = guard.as_ref() {
+        return Ok(Some(layout.clone()));
+    }
+    drop(guard);
+    session::load_memory_layout(&app)
+}
+
+#[tauri::command]
+fn set_memory_layout(
+    app: AppHandle,
+    session: State<'_, SessionState>,
+    layout: MemoryLayout,
+) -> Result<(), String> {
+    session::set_memory_layout(&app, &session, layout).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -126,6 +153,10 @@ pub fn run() {
             get_session_info,
             get_trace_view,
             get_entry_index_by_time,
+            get_command_config,
+            set_command_config,
+            get_memory_layout,
+            set_memory_layout,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
