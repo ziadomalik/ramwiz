@@ -37,7 +37,7 @@ definePageMeta({
 const { trace } = useBackend();
 
 const COLORS = [
-  '#A8D8EA', '#FFCAB1', '#B5EAD7', '#E2B6CF',
+  '#FFCAB1', '#A8D8EA', '#B5EAD7', '#E2B6CF',
   '#C7CEEA', '#FFEAA7', '#DCD6F7', '#F8B595',
   '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
   '#F1948A', '#82E0AA', '#F5CBA7', '#AED6F1',

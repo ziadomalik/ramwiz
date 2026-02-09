@@ -15,7 +15,6 @@
             <div></div>
           </template>
         </UTree>
-        <pre>{{ expandedState }}</pre>
       </div>
     </UDashboardSidebar>
     <UDashboardPanel>
@@ -116,6 +115,8 @@ function getUniqueTreeItemId(chIdx: number, bgIdx?: number, bIdx?: number) {
 }
 
 // All channels are expanded by default.
+// NOTE: This array also keeps track of children that are expanded even when their parent is collapsed.
+// When their parent is collapsed we want to ignore them when calculating the y-indices.
 const expandedState = computed({
   get: () => { 
     if (uiStore.expandedState.length === 0) {

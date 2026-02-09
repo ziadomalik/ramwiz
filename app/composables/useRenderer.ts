@@ -45,37 +45,45 @@ precision mediump float;
 attribute vec2 position;
 
 attribute float instanceStart;
-attribute float instanceCmdId; 
+attribute float instanceCmdId;
+attribute float instanceChannel;
+attribute float instanceBankgroup;
+attribute float instanceBank;
 
-uniform sampler2D u_lookupTable; 
-uniform vec2 u_viewRange; 
-uniform float u_rowHeight;
+uniform sampler2D u_lookupTable;
+uniform sampler2D u_swimlaneLookup;
+uniform vec2 u_viewRange;
 uniform vec2 u_resolution;
+uniform float u_maxBankgroups;
+uniform float u_maxBanks;
+uniform float u_swimlaneSize;
+uniform float u_rowHeight;
 
 varying vec3 vColor;
 
 void main() {
-  // Map Command ID to Texture U coordinate (0..1)
-  // We sample from the center of the pixel: (id + 0.5) / 256.0
-  vec2 uv = vec2((instanceCmdId + 0.5) / 256.0, 0.5);
-  vec4 properties = texture2D(u_lookupTable, uv);
-  
-  vec3 color = properties.rgb;
-  // We're storing the clock period in the alpha channel lol. 
-  float duration = properties.a; 
+  // Command properties lookup
+  vec2 cmdUv = vec2((instanceCmdId + 0.5) / 256.0, 0.5);
+  vec4 properties = texture2D(u_lookupTable, cmdUv);
+  vColor = properties.rgb;
+  float duration = properties.a;
 
-  vColor = color;
-
+  // X: map world time to NDC
   float viewWidth = u_viewRange.y - u_viewRange.x;
 
   float worldX = instanceStart + (position.x * duration);
-  
-  // TODO(ziad):  Figure out how to handle different rows (e.g. row is passed as a uniform if const).
-  float row = 0.0; 
-  float worldY = row + position.y;
-
   float ndcX = ((worldX - u_viewRange.x) / viewWidth) * 2.0 - 1.0;
-  float ndcY = 1.0 - (worldY * u_rowHeight * 2.0 / u_resolution.y);
+
+  // Y: lookup swimlane screen position from (channel, bankgroup, bank)
+  float laneIndex = instanceChannel * (u_maxBankgroups * u_maxBanks)
+                  + instanceBankgroup * u_maxBanks
+                  + instanceBank;
+  float uCoord = (laneIndex + 0.5) / u_swimlaneSize;
+  float yCenter = texture2D(u_swimlaneLookup, vec2(uCoord, 0.5)).r;
+
+  // position.y is 0 or 1 (quad vertices), center the rect on yCenter
+  float yScreen = yCenter + (position.y - 0.5) * u_rowHeight;
+  float ndcY = 1.0 - (yScreen / u_resolution.y) * 2.0;
 
   gl_Position = vec4(ndcX, ndcY, 0, 1);
 }
@@ -140,6 +148,63 @@ function createLookupTexture(regl: createREGL.Regl, config: CommandConfig) {
   });
 }
 
+
+// Builds a swimlane lookup texture data array.
+// Maps each flat lane index (ch * maxBg * maxBank + bg * maxBank + bank) to a Y pixel center
+// based on the current tree expand/collapse state and row layout positions.
+function buildSwimlaneLookup(
+  numChannels: number,
+  numBankgroups: number,
+  numBanks: number,
+  expandedState: string[],
+  rowLayout: { top: number; height: number }[],
+  canvasTop: number
+): Float32Array {
+  const totalLanes = numChannels * numBankgroups * numBanks;
+  // Array of RGBA floats, Y center stored in R channel
+  const data = new Float32Array(Math.max(totalLanes, 1) * 4);
+
+  const expandedSet = new Set(expandedState);
+
+  // Walk the tree to understand the order of the rows in the DOM.
+  let visualRow = 0;
+
+  for (let ch = 0; ch < numChannels; ch++) {
+    const channelRowIdx = visualRow;
+    visualRow++;
+
+    const channelExpanded = expandedSet.has(`ch${ch}`);
+
+    for (let bg = 0; bg < numBankgroups; bg++) {
+      // If channel is collapsed, bankgroup rows don't exist in the DOM
+      let bgRowIdx = channelRowIdx;
+      if (channelExpanded) {
+        bgRowIdx = visualRow;
+        visualRow++;
+      }
+
+      const bgExpanded = channelExpanded && expandedSet.has(`ch${ch}_bg${bg}`);
+
+      for (let b = 0; b < numBanks; b++) {
+        // If bankgroup is collapsed, bank rows don't exist in the DOM
+        let bankRowIdx = bgRowIdx;
+        if (bgExpanded) {
+          bankRowIdx = visualRow;
+          visualRow++;
+        }
+
+        const flatIdx = ch * (numBankgroups * numBanks) + bg * numBanks + b;
+        const row = rowLayout[bankRowIdx];
+        if (row) {
+          data[flatIdx * 4] = (row.top + row.height / 2) - canvasTop;
+        }
+      }
+    }
+  }
+
+  return data;
+}
+
 function decodeTraceData(input: Uint8Array | ArrayBuffer | number[]) {
   const array = input instanceof Uint8Array ? input : new Uint8Array(input as any);
 
@@ -163,6 +228,9 @@ interface DrawProps {
   instances: number;
   startBuffer: createREGL.Buffer;
   cmdBuffer: createREGL.Buffer;
+  channelBuffer: createREGL.Buffer;
+  bankgroupBuffer: createREGL.Buffer;
+  bankBuffer: createREGL.Buffer;
 }
 
 const LOD_FACTORS = [1, 2, 3];
@@ -184,6 +252,7 @@ interface LODLevel {
 
 export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
   const uiStore = useUIStore();
+  const sessionStore = useSessionStore();
   const { trace, store } = useBackend();
 
   let regl: createREGL.Regl | null = null;
@@ -191,6 +260,7 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
   const lodLevels: LODLevel[] = [];
 
   let lookupTexture: createREGL.Texture;
+  let yIndexTexture: createREGL.Texture;
 
   let abortController: AbortController | null = null;
 
@@ -365,6 +435,9 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
 
       const lodTempStarts: Float32Array[] = LOD_FACTORS.map(f => new Float32Array(Math.ceil(CHUNK_SIZE / f)));
       const lodTempCmds: Uint8Array[] = LOD_FACTORS.map(f => new Uint8Array(Math.ceil(CHUNK_SIZE / f)));
+      const lodTempChannels: Uint8Array[] = LOD_FACTORS.map(f => new Uint8Array(Math.ceil(CHUNK_SIZE / f)));
+      const lodTempBankgroups: Uint8Array[] = LOD_FACTORS.map(f => new Uint8Array(Math.ceil(CHUNK_SIZE / f)));
+      const lodTempBanks: Uint8Array[] = LOD_FACTORS.map(f => new Uint8Array(Math.ceil(CHUNK_SIZE / f)));
       
       // Track offsets for each LOD level separately
       const lodOffsets = new Array(NUM_LODS).fill(0);
@@ -396,6 +469,9 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
             const lod = lodLevels[lodIdx]!;
             const tempStarts = lodTempStarts[lodIdx]!;
             const tempCmds = lodTempCmds[lodIdx]!;
+            const tempChannels = lodTempChannels[lodIdx]!;
+            const tempBankgroups = lodTempBankgroups[lodIdx]!;
+            const tempBanks = lodTempBanks[lodIdx]!;
             
             let lodWriteIdx = 0;
             
@@ -404,6 +480,9 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
               if (globalIdx % factor === 0) {
                 tempStarts[lodWriteIdx] = data.starts[i]!;
                 tempCmds[lodWriteIdx] = data.cmds[i]!;
+                tempChannels[lodWriteIdx] = data.channels[i]!;
+                tempBankgroups[lodWriteIdx] = data.bankgroups[i]!;
+                tempBanks[lodWriteIdx] = data.banks[i]!;
                 lodWriteIdx++;
               }
             }
@@ -415,6 +494,9 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
 
               lod.startBuffer.subdata(tempStarts.subarray(0, lodWriteIdx), lodOffsets[lodIdx] * 4);
               lod.cmdBuffer.subdata(tempCmds.subarray(0, lodWriteIdx), lodOffsets[lodIdx] * 1);
+              lod.channelBuffer.subdata(tempChannels.subarray(0, lodWriteIdx), lodOffsets[lodIdx] * 1);
+              lod.bankgroupBuffer.subdata(tempBankgroups.subarray(0, lodWriteIdx), lodOffsets[lodIdx] * 1);
+              lod.bankBuffer.subdata(tempBanks.subarray(0, lodWriteIdx), lodOffsets[lodIdx] * 1);
               
               lodOffsets[lodIdx] += lodWriteIdx;
               lod.loadedCount = lodOffsets[lodIdx];
@@ -447,6 +529,7 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
 
       // Initialize lookup texture to dummy value
       lookupTexture = regl.texture({ width: 1, height: 1 });
+      yIndexTexture = regl.texture({ width: 1, height: 1 });
 
       const gridBuffer = regl.buffer({ length: 0, type: 'float', usage: 'dynamic' });
       const drawGrid = regl({
@@ -483,13 +566,38 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
             normalized: false,
             offset: (ctx: any, props: DrawProps) => props.offset * 1
           },
+          instanceChannel: {
+            buffer: (ctx: any, props: DrawProps) => props.channelBuffer,
+            divisor: 1,
+            normalized: false,
+            offset: (ctx: any, props: DrawProps) => props.offset * 1
+          },
+          instanceBankgroup: {
+            buffer: (ctx: any, props: DrawProps) => props.bankgroupBuffer,
+            divisor: 1,
+            normalized: false,
+            offset: (ctx: any, props: DrawProps) => props.offset * 1
+          },
+          instanceBank: {
+            buffer: (ctx: any, props: DrawProps) => props.bankBuffer,
+            divisor: 1,
+            normalized: false,
+            offset: (ctx: any, props: DrawProps) => props.offset * 1
+          },
         },
 
         uniforms: {
           u_viewRange: regl.prop<DrawProps, 'viewRange'>('viewRange'),
-          u_rowHeight: 20.0,
+          u_rowHeight: 16.0,
           u_resolution: (ctx: any) => [ctx.viewportWidth, ctx.viewportHeight],
-          u_lookupTable: () => lookupTexture
+          u_lookupTable: () => lookupTexture,
+          u_swimlaneLookup: () => yIndexTexture,
+          u_maxBankgroups: () => sessionStore.memoryLayout?.numBankgroups ?? 1,
+          u_maxBanks: () => sessionStore.memoryLayout?.numBanks ?? 1,
+          u_swimlaneSize: () => {
+            const ml = sessionStore.memoryLayout;
+            return ml ? Math.max(ml.numChannels * ml.numBankgroups * ml.numBanks, 1) : 1;
+          },
         },
 
         instances: (ctx: any, props: DrawProps) => props.instances,
@@ -523,6 +631,31 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
           
           gridBuffer(lines.subarray(0, count));
           drawGrid({ count: count });
+
+          // Update swimlane lookup texture every frame to see if the expanded state has changed.
+          // Should be fine, the amount of data is tiny, ~64-256 Entries
+          const ml = sessionStore.memoryLayout;
+          if (ml) {
+            let expanded = uiStore.expandedState;
+            if (expanded.length === 0) {
+              expanded = Array(ml.numChannels).fill('').map((_: any, i: number) => `ch${i}`);
+            }
+            const totalLanes = Math.max(ml.numChannels * ml.numBankgroups * ml.numBanks, 1);
+            const swimlaneData = buildSwimlaneLookup(
+              ml.numChannels, ml.numBankgroups, ml.numBanks,
+              expanded, rows, canvasRect.top
+            );
+            // @ts-expect-error - regl textures can be reinitialized by calling them as functions, but the TS types freak out for some reason.
+            yIndexTexture({
+              width: totalLanes,
+              height: 1,
+              data: swimlaneData,
+              format: 'rgba',
+              type: 'float',
+              min: 'nearest',
+              mag: 'nearest',
+            });
+          }
         }
 
         const viewStart = viewState.start;
@@ -608,7 +741,10 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
           offset: startOffset,
           instances: count,
           startBuffer: lod.startBuffer,
-          cmdBuffer: lod.cmdBuffer
+          cmdBuffer: lod.cmdBuffer,
+          channelBuffer: lod.channelBuffer,
+          bankgroupBuffer: lod.bankgroupBuffer,
+          bankBuffer: lod.bankBuffer,
         });
 
         frameCount++;
