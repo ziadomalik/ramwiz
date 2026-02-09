@@ -139,9 +139,11 @@ pub fn parse(mmap: &Mmap, header: &Header, index: u64) -> Result<Entry, EntryErr
 pub fn get_entry_range_bytes(entries: &[Entry]) -> Vec<u8> {
     let n = entries.len();
 
-    // Layout: [Start CLKs (N * 4 bytes)] [Command IDs (N * 1 byte)]
-    // Total size: N * 5 bytes.
-    let mut bytes = vec![0u8; n * 5];
+    // Layout: 
+    // [Start CLKs (N * 4 bytes)][Command IDs (N * 1 byte)][Channels (N * 1 byte)][Bankgroups (N * 1 byte)][Banks (N * 1 byte)]
+    // TODO(ziad): Finally pin a number on the minimum & maximum values for each field. currently assuming addr vec fields fit into 1 byte.
+    // Total size: N * 8 bytes.
+    let mut bytes = vec![0u8; n * 8];
 
     for (i, entry) in entries.iter().enumerate() {
         let start_val = entry.clk.get() as f32;
@@ -152,6 +154,21 @@ pub fn get_entry_range_bytes(entries: &[Entry]) -> Vec<u8> {
     let cmd_offset = n * 4;
     for (i, entry) in entries.iter().enumerate() {
         bytes[cmd_offset + i] = entry.cmd_id;
+    }
+
+    let channel_offset = cmd_offset + n;
+    for (i, entry) in entries.iter().enumerate() {
+        bytes[channel_offset + i] = entry.channel.get() as u8;
+    }
+
+    let bankgroup_offset = channel_offset + n;
+    for (i, entry) in entries.iter().enumerate() {
+        bytes[bankgroup_offset + i] = entry.bankgroup.get() as u8;
+    }
+
+    let bank_offset = bankgroup_offset + n;
+    for (i, entry) in entries.iter().enumerate() {
+        bytes[bank_offset + i] = entry.bank.get() as u8;
     }
 
     bytes

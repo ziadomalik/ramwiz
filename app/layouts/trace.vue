@@ -6,7 +6,7 @@
         <div class="border-b border-neutral-800 mt-px"></div>
       </div>
       <div ref="treeContainer" class="h-full overflow-auto">
-        <UTree size="xl" :items="items" :ui="{ root: 'border-b border-neutral-800', link: 'rounded-none before:rounded-none', itemWithChildren: 'ps-0' }" >
+        <UTree v-model:expanded="expandedState" size="xl" :items="items" :ui="{ root: 'border-b border-neutral-800', link: 'rounded-none before:rounded-none', itemWithChildren: 'ps-0' }" >
           <template #item-label="{ item }">
             {{ item.name }}
           </template>
@@ -15,6 +15,7 @@
             <div></div>
           </template>
         </UTree>
+        <pre>{{ expandedState }}</pre>
       </div>
     </UDashboardSidebar>
     <UDashboardPanel>
@@ -32,15 +33,38 @@ const sessionStore = useSessionStore()
 
 const treeContainer = ref<HTMLElement | null>(null)
 
-await useAsyncData('memoryLayout', async () => sessionStore.loadSavedMemoryLayout())
+await useAsyncData('memoryLayoutTrace', async () => sessionStore.loadSavedMemoryLayout())
 
 const updateLayout = () => {
   if (!treeContainer.value) return
-  const rows = treeContainer.value.querySelectorAll('li[role="presentation"], button[data-slot="link"]')
-  const layout = Array.from(rows).map(row => {
-    const rect = row.getBoundingClientRect()
-    return { top: rect.top, height: rect.height }
+  const rows = treeContainer.value.querySelectorAll('button[data-slot="link"]')
+
+  let lastEncounteredChannel: number | undefined = undefined
+  let lastEncounteredBankgroup: number | undefined = undefined
+
+  const layout = Array.from(rows).map((rowElement) => {
+    let row = rowElement as HTMLButtonElement;
+    const rect = row.getBoundingClientRect();
+
+    if (row.innerText.includes('Channel')) {
+      let cleanInnerText = row.innerText.replace(/\n/g, ' ');
+      lastEncounteredChannel = parseInt(cleanInnerText.split(' ')[1]!);
+    }
+
+    if (row.innerText.includes('Bankgroup')) {
+      let cleanInnerText = row.innerText.replace(/\n/g, ' ');
+      lastEncounteredBankgroup = parseInt(cleanInnerText.split(' ')[1]!);
+    }
+
+    let bank = undefined
+    if (row.innerText.includes('Bank') && !row.innerText.includes('Bankgroup')) {
+      let cleanInnerText = row.innerText.replace(/\n/g, ' ');
+      bank = parseInt(cleanInnerText.split(' ')[1]!);
+    }
+
+    return { top: rect.top, height: rect.height, channel: lastEncounteredChannel, bankgroup: lastEncounteredBankgroup, bank }
   })
+
   uiStore.setRowLayout(layout)
 }
 
@@ -91,6 +115,18 @@ function getUniqueTreeItemId(chIdx: number, bgIdx?: number, bIdx?: number) {
   return id.join('_')
 }
 
+// All channels are expanded by default.
+const expandedState = computed({
+  get: () => { 
+    if (uiStore.expandedState.length === 0) {
+      return Array(sessionStore.memoryLayout?.numChannels).fill('').map((_, chIdx) => `ch${chIdx}`)
+    }
+
+    return uiStore.expandedState
+  },
+  set: (value: string[]) => uiStore.setExpandedState(value)
+}) 
+
 // NOTE: apparently NuxtUI checks uniqueness by label, so if one clicks `Bankgroup 0`, all bankgroups within all channels will expand.
 // Therefore we will do a very stupid hack by treating `label` as an id and adding our own `name` field we use to display the label.
 // To me this is a better solution than to integrate another UI library or even implementing my own tree component. 
@@ -98,7 +134,6 @@ const items = computed<TreeItem[]>(() => (
   Array(sessionStore.memoryLayout?.numChannels).fill({}).map((_, chIdx) => ({
     name: `Channel ${chIdx}`,
     label: getUniqueTreeItemId(chIdx),
-    defaultExpanded: true,
     children: Array(sessionStore.memoryLayout?.numBankgroups).fill({}).map((_, bgIdx) => ({
       name: `Bankgroup ${bgIdx}`,
       label: getUniqueTreeItemId(chIdx, bgIdx), 

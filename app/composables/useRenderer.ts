@@ -143,14 +143,18 @@ function createLookupTexture(regl: createREGL.Regl, config: CommandConfig) {
 function decodeTraceData(input: Uint8Array | ArrayBuffer | number[]) {
   const array = input instanceof Uint8Array ? input : new Uint8Array(input as any);
 
-  // Each entry is 5 bytes: 4 bytes for start + 1 byte for cmd id.
-  const N = array.byteLength / 5;
+  // Each entry is 8 bytes: 4 bytes for start + 1 byte for cmd id + 1 byte for channel + 1 byte for bankgroup + 1 byte for bank.
+  const N = array.byteLength / 8;
+
   const startBytes = N * 4;
 
   const startView = new Float32Array(array.buffer, array.byteOffset, N);
   const cmdView = new Uint8Array(array.buffer, array.byteOffset + startBytes, N);
+  const channelView = new Uint8Array(array.buffer, array.byteOffset + startBytes + N, N);
+  const bankgroupView = new Uint8Array(array.buffer, array.byteOffset + startBytes + (2 * N), N);
+  const bankView = new Uint8Array(array.buffer, array.byteOffset + startBytes + (3 * N), N);
 
-  return { starts: startView, cmds: cmdView, count: N };
+  return { starts: startView, cmds: cmdView, channels: channelView, bankgroups: bankgroupView, banks: bankView, count: N };
 }
 
 interface DrawProps {
@@ -170,6 +174,9 @@ const EVENTS_PER_PIXEL_THRESHOLD = 1500;
 interface LODLevel {
   startBuffer: createREGL.Buffer;
   cmdBuffer: createREGL.Buffer;
+  channelBuffer: createREGL.Buffer;
+  bankgroupBuffer: createREGL.Buffer;
+  bankBuffer: createREGL.Buffer;
   chunkIndex: { time: number; offset: number }[];
   loadedCount: number;
   totalCount: number;
@@ -325,6 +332,9 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
         lodLevels.push({
           startBuffer: regl.buffer({ length: lodCount * 4, type: 'float', usage: 'dynamic' }),
           cmdBuffer: regl.buffer({ length: lodCount, type: 'uint8', usage: 'dynamic' }),
+          channelBuffer: regl.buffer({ length: lodCount, type: 'uint8', usage: 'dynamic' }),
+          bankgroupBuffer: regl.buffer({ length: lodCount, type: 'uint8', usage: 'dynamic' }),
+          bankBuffer: regl.buffer({ length: lodCount, type: 'uint8', usage: 'dynamic' }),
           chunkIndex: [],
           loadedCount: 0,
           totalCount: lodCount
