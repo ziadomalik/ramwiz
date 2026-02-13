@@ -1,7 +1,0 @@
-I am not really following a strict roadmap/todo list as I am developing the MVP.
-This is just a TODO list for personal reference:
-
--[] (25.01.2026) Implement Swimlanes:
-  - Whether to calculate swimlanes in Rust and send them to the FE...
-  - ...or just send over the entire address vector over and calculate the y index based on that.
-  - Figure out if there's a neat WebGL trick one could use to calculate the y index while rendering.
