@@ -1,0 +1,20 @@
+services:
+  ramulator-viz:
+    build: .
+    container_name: ramulator_viz_dev
+    network_mode: host
+    environment:
+      - DISPLAY=${DISPLAY}
+      - WEBKIT_DISABLE_COMPOSITING_MODE=1
+    volumes:
+      - .:/home/dev/visualizer
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - cargo_cache:/home/dev/.cargo/registry
+      - pnpm_store:/home/dev/.local/share/pnpm
+      - target_cache:/home/dev/visualizer/src-tauri/target
+    command: tail -f /dev/null
+
+volumes:
+  cargo_cache:
+  pnpm_store:
+  target_cache:
