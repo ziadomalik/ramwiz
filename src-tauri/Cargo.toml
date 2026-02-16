@@ -28,3 +28,4 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 zerocopy = { version = "0.8.33", features = ["derive"] }
 tauri-plugin-store = "2"
+serde_yaml = "0.9"

@@ -1,6 +1,6 @@
 import type { FileInfo } from '@tauri-apps/plugin-fs';
 import { stat } from '@tauri-apps/plugin-fs';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open, save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 
 //-------------//
@@ -114,6 +114,35 @@ async function setMemoryLayout(layout: MemoryLayout): Promise<void> {
   return invoke<void>('set_memory_layout', { layout });
 }
 
+// ------------------- //
+// YAML Config Export   //
+// ------------------- //
+
+export async function exportConfigYaml(): Promise<boolean> {
+  const savePath = await save({
+    filters: [{ name: 'YAML Files', extensions: ['yaml', 'yml'] }],
+    defaultPath: 'ramwiz-config.yaml',
+  });
+
+  if (!savePath) return false;
+
+  await invoke<void>('export_config_yaml', { path: savePath });
+  return true;
+}
+
+export async function importConfigYaml(): Promise<boolean> {
+  const filePath = await open({
+    filters: [{ name: 'YAML Files', extensions: ['yaml', 'yml'] }],
+    multiple: false,
+    directory: false,
+  });
+
+  if (!filePath) return false;
+
+  await invoke<void>('import_config_yaml', { path: filePath });
+  return true;
+}
+
 export default function useBackend() {
   return {
     trace: {
@@ -130,6 +159,8 @@ export default function useBackend() {
       setCommandConfig,
       getMemoryLayout,
       setMemoryLayout,
+      exportConfigYaml,
+      importConfigYaml,
     },
   } 
 }

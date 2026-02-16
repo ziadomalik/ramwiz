@@ -67,6 +67,16 @@ export const useSessionStore = defineStore('session', {
       return this.memoryLayout;
     },
 
+    async importConfigFromYaml(): Promise<boolean> {
+      const { store } = useBackend();
+      const imported = await store.importConfigYaml();
+      if (!imported) return false;
+
+      await this.loadSavedCommandConfig();
+      await this.loadSavedMemoryLayout();
+      return true;
+    },
+
     async close() {
       const { trace } = useBackend()
 

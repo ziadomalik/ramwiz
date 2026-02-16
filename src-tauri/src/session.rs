@@ -7,6 +7,7 @@
 /// ----
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
 use std::sync::Mutex;
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_store::StoreExt;
@@ -109,6 +110,73 @@ pub fn set_memory_layout<R: Runtime>(
     let mut guard = session.memory.lock().map_err(|e| e.to_string())?;
 
     *guard = Some(memory_layout);
+
+    Ok(())
+}
+
+// --------------------- //
+// YAML Config Export     //
+// --------------------- //
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FullConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command_config: Option<CommandConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_layout: Option<MemoryLayout>,
+}
+
+pub fn export_config_yaml<R: Runtime>(
+    app: &AppHandle<R>,
+    session: &SessionState,
+    path: String,
+) -> Result<(), String> {
+    let config = {
+        let guard = session.config.lock().map_err(|e| e.to_string())?;
+        match guard.as_ref() {
+            Some(c) => Some(c.clone()),
+            None => load_command_config(app)?,
+        }
+    };
+
+    let layout = {
+        let guard = session.memory.lock().map_err(|e| e.to_string())?;
+        match guard.as_ref() {
+            Some(l) => Some(l.clone()),
+            None => load_memory_layout(app)?,
+        }
+    };
+
+    let full = FullConfig {
+        command_config: config,
+        memory_layout: layout,
+    };
+
+    let yaml = serde_yaml::to_string(&full).map_err(|e| e.to_string())?;
+    fs::write(&path, yaml).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+// --------------------- //
+// YAML Config Import     //
+// --------------------- //
+
+pub fn import_config_yaml<R: Runtime>(
+    app: &AppHandle<R>,
+    session: &SessionState,
+    path: String,
+) -> Result<(), String> {
+    let contents = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let full: FullConfig = serde_yaml::from_str(&contents).map_err(|e| e.to_string())?;
+
+    if let Some(config) = full.command_config {
+        set_command_config(app, session, config)?;
+    }
+
+    if let Some(layout) = full.memory_layout {
+        set_memory_layout(app, session, layout)?;
+    }
 
     Ok(())
 }

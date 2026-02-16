@@ -119,6 +119,24 @@ fn get_trace_view(
 }
 
 #[tauri::command]
+fn export_config_yaml(
+    app: AppHandle,
+    session: State<'_, SessionState>,
+    path: String,
+) -> Result<(), String> {
+    session::export_config_yaml(&app, &session, path)
+}
+
+#[tauri::command]
+fn import_config_yaml(
+    app: AppHandle,
+    session: State<'_, SessionState>,
+    path: String,
+) -> Result<(), String> {
+    session::import_config_yaml(&app, &session, path)
+}
+
+#[tauri::command]
 fn close_session(session: State<'_, SessionState>) -> Result<(), String> {
     {
         let mut guard = session.loader.lock().map_err(|e| e.to_string())?;
@@ -157,6 +175,8 @@ pub fn run() {
             set_command_config,
             get_memory_layout,
             set_memory_layout,
+            export_config_yaml,
+            import_config_yaml,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

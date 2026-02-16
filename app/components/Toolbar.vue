@@ -7,5 +7,24 @@
       size="xs" 
       to="/" 
     />
+    <UButton 
+      class="rounded-none cursor-pointer" 
+      label="Export Config"
+      icon="i-lucide-download" 
+      size="xs" 
+      @click="handleExport"
+    />
   </div>
 </template>
+
+<script setup lang="ts">
+const { store } = useBackend();
+
+async function handleExport() {
+  try {
+    await store.exportConfigYaml();
+  } catch (e) {
+    console.error('Failed to export config:', e);
+  }
+}
+</script>
