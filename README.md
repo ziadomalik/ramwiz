@@ -23,7 +23,7 @@ diff -a my_trace.csv my_trace_csv.ch0
 
 ## Download 
 
-You can download a binary from one of the [releases](https://github.com/ziadomalik/ramwiz/releases).
+You can download a binary from one of the [releases](https://github.com/ziadomalik/ramwiz/releases). <br>
 For Linux, there only are `AppImage`, `.deb` and `.rpm` distributions of the app.
 
 ## Development Environment
