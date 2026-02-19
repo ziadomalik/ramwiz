@@ -28,4 +28,4 @@ For Linux, there only are `AppImage`, `.deb` and `.rpm` distributions of the app
 
 ## Development Environment
 
-> Coming soon :)
+> Coming soon, trying to come up with a nice Docker setup.
