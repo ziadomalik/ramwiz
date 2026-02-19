@@ -28,4 +28,32 @@ For Linux, there only are `AppImage`, `.deb` and `.rpm` distributions of the app
 
 ## Development Environment
 
-> Coming soon, trying to come up with a nice Docker setup.
+### Prerequisites
+
+You need to install the needed Tauri dependencies to run the development environment.
+
+- [Linux](https://tauri.app/start/prerequisites/#linux)
+- [MacOS](https://tauri.app/start/prerequisites/#macos)
+- [Windows](https://tauri.app/start/prerequisites/#windows)
+
+Then you need to install [Rust](https://tauri.app/start/prerequisites/#rust) and [Node.js](https://tauri.app/start/prerequisites/#nodejs)
+This project uses and recommends using [Bun](https://bun.sh/) as the package manager because it's very fast, it will still work with the default package manager (npm).
+
+### Running the Development Environment
+
+```bash
+# If you did not install bun, just replace `bun` with `npm` or any other package manager.
+
+bun install 
+
+# Start the development server.
+# It will watch for changes in the files and rebuild the application automatically.
+bun run tdev 
+
+# If you want to build a binary:
+# It will build the application for the current platform.
+# Binary will land in the `src-tauri/target` directory.
+bun run tbuild
+```
+
+For further information, please refer to the [Tauri documentation](https://tauri.app/start)
