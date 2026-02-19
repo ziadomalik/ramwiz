@@ -1,9 +1,8 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [created]
 
 jobs:
   build:
@@ -54,6 +53,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
+          releaseId: ${{ github.event.release.id }}
           releaseName: 'RamWiz ${{ github.ref_name }}'
           releaseBody: 'See the assets below to download the installer for your platform.'
           releaseDraft: false
