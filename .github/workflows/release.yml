@@ -45,7 +45,7 @@ jobs:
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'x86_64-apple-darwin,aarch64-apple-darwin' || '' }}
 
-      - nam: Install frontend dependencies
+      - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build Tauri app
