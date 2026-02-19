@@ -21,24 +21,4 @@ diff -a my_trace.csv my_trace_csv.ch0
 
 ## Development Environment
 
-1. Easiest way is to just get started with Docker:
-
-```bash
-docker compose up -d
-docker exec -it ramulator_viz_dev bash
-```
-
-2. Install dependencies:
-
-```
-pnpm install
-```
-
-3. Run development server:
-
-```
-pnpm tdev
-```
-
-> [!IMPORTANT]  
-> There is a bug where on first start, the application is just a white-screen (give it a minute though, make sure there are no logs indicating the dev server is still starting up), just do a hard refresh (CTRL + SHIFT + R), then all should be good.
+> Coming soon :)
