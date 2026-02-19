@@ -43,7 +43,6 @@ This project uses and recommends using [Bun](https://bun.sh/) as the package man
 
 ```bash
 # If you did not install bun, just replace `bun` with `npm` or any other package manager.
-
 bun install 
 
 # Start the development server.
@@ -56,4 +55,4 @@ bun run tdev
 bun run tbuild
 ```
 
-For further information, please refer to the [Tauri documentation](https://tauri.app/start)
+For further information, please refer to the [Tauri documentation](https://tauri.app/start).
