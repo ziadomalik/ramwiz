@@ -29,5 +29,10 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.9.6"
-  }
+  },
+  "trustedDependencies": [
+    "@parcel/watcher",
+    "esbuild",
+    "vue-demi"
+  ]
 }
