@@ -9,7 +9,7 @@ import type { CommandConfig } from '@/composables/useBackend';
 import { useUIStore } from '~/stores/ui';
 
 const gridVert = `
-precision mediump float;
+precision highp float;
 attribute vec2 position;
 attribute float yScreen;
 
@@ -33,7 +33,7 @@ void main() {
 `
 
 const gridFrag = `
-precision mediump float;
+precision highp float;
 void main() {
   // TODO(ziad): Match color the scheme.
   gl_FragColor = vec4(0.3, 0.3, 0.3, 1.0);
@@ -41,7 +41,7 @@ void main() {
 `
 
 const vert = `
-precision mediump float;
+precision highp float;
 attribute vec2 position;
 
 attribute float instanceStart;
@@ -90,7 +90,7 @@ void main() {
 `
 
 const frag = `
-precision mediump float;
+precision highp float;
 varying vec3 vColor;
 
 void main() {
@@ -149,21 +149,18 @@ function createLookupTexture(regl: createREGL.Regl, config: CommandConfig) {
 }
 
 
-// Builds a swimlane lookup texture data array.
+// Writes swimlane lookup data into the provided Float32Array buffer (must be pre-zeroed).
 // Maps each flat lane index (ch * maxBg * maxBank + bg * maxBank + bank) to a Y pixel center
 // based on the current tree expand/collapse state and row layout positions.
-function buildSwimlaneLookup(
+function buildSwimlaneLookupInto(
+  data: Float32Array,
   numChannels: number,
   numBankgroups: number,
   numBanks: number,
   expandedState: string[],
   rowLayout: { top: number; height: number }[],
   canvasTop: number
-): Float32Array {
-  const totalLanes = numChannels * numBankgroups * numBanks;
-  // Array of RGBA floats, Y center stored in R channel
-  const data = new Float32Array(Math.max(totalLanes, 1) * 4);
-
+): void {
   const expandedSet = new Set(expandedState);
 
   // Walk the tree to understand the order of the rows in the DOM.
@@ -201,8 +198,6 @@ function buildSwimlaneLookup(
       }
     }
   }
-
-  return data;
 }
 
 function decodeTraceData(input: Uint8Array | ArrayBuffer | number[]) {
@@ -220,6 +215,17 @@ function decodeTraceData(input: Uint8Array | ArrayBuffer | number[]) {
   const bankView = new Uint8Array(array.buffer, array.byteOffset + startBytes + (3 * N), N);
 
   return { starts: startView, cmds: cmdView, channels: channelView, bankgroups: bankgroupView, banks: bankView, count: N };
+}
+
+// Binary search (upper bound): returns the first index where chunkIndex[i].time > time.
+function bisectRight(index: { time: number; offset: number }[], time: number): number {
+  let lo = 0, hi = index.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (index[mid]!.time <= time) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }
 
 interface DrawProps {
@@ -264,6 +270,16 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
 
   let abortController: AbortController | null = null;
 
+  // Swimlane texture cache: only rebuild when layout/expanded state changes.
+  let cachedDefaultExpanded: string[] | null = null;
+  let cachedDefaultExpandedCount = -1;
+  const swimlaneCache = {
+    layoutVersion: -1,
+    canvasTop: NaN,
+    totalLanes: 0,
+    data: null as Float32Array | null,
+  };
+
   const viewState = reactive({
     start: 0,
     scrollY: 0,
@@ -274,7 +290,6 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
     // Boundaries for the time range.
     minTime: 0,
     maxTime: 1000,
-    viewRange: [0, 0],
   })
 
   const stats = reactive({
@@ -387,6 +402,13 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
     const signal = abortController.signal;
 
     try {
+      for (const lod of lodLevels) {
+        lod.startBuffer.destroy();
+        lod.cmdBuffer.destroy();
+        lod.channelBuffer.destroy();
+        lod.bankgroupBuffer.destroy();
+        lod.bankBuffer.destroy();
+      }
       lodLevels.length = 0;
 
       const header = await trace.getHeader();
@@ -507,7 +529,6 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
         globalEventIndex += data.count;
         offset += count;
 
-        stats.progress = offset / totalEntries;
         stats.eventCount = lodLevels[0]?.loadedCount ?? 0;
 
         await new Promise(resolve => requestAnimationFrame(resolve));
@@ -632,29 +653,54 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
           gridBuffer(lines.subarray(0, count));
           drawGrid({ count: count });
 
-          // Update swimlane lookup texture every frame to see if the expanded state has changed.
-          // Should be fine, the amount of data is tiny, ~64-256 Entries
+          // Update swimlane lookup texture only when layout/expanded state actually changes.
           const ml = sessionStore.memoryLayout;
           if (ml) {
             let expanded = uiStore.expandedState;
             if (expanded.length === 0) {
-              expanded = Array(ml.numChannels).fill('').map((_: any, i: number) => `ch${i}`);
+              if (!cachedDefaultExpanded || cachedDefaultExpandedCount !== ml.numChannels) {
+                cachedDefaultExpandedCount = ml.numChannels;
+                cachedDefaultExpanded = Array(ml.numChannels).fill('').map((_: any, i: number) => `ch${i}`);
+              }
+              expanded = cachedDefaultExpanded;
             }
+
             const totalLanes = Math.max(ml.numChannels * ml.numBankgroups * ml.numBanks, 1);
-            const swimlaneData = buildSwimlaneLookup(
-              ml.numChannels, ml.numBankgroups, ml.numBanks,
-              expanded, rows, canvasRect.top
+
+            const swimlaneDirty = (
+              swimlaneCache.layoutVersion !== uiStore.layoutVersion ||
+              swimlaneCache.canvasTop !== canvasRect.top ||
+              swimlaneCache.totalLanes !== totalLanes
             );
-            // @ts-expect-error - regl textures can be reinitialized by calling them as functions, but the TS types freak out for some reason.
-            yIndexTexture({
-              width: totalLanes,
-              height: 1,
-              data: swimlaneData,
-              format: 'rgba',
-              type: 'float',
-              min: 'nearest',
-              mag: 'nearest',
-            });
+
+            if (swimlaneDirty) {
+              swimlaneCache.layoutVersion = uiStore.layoutVersion;
+              swimlaneCache.canvasTop = canvasRect.top;
+              swimlaneCache.totalLanes = totalLanes;
+
+              if (!swimlaneCache.data || swimlaneCache.data.length < totalLanes * 4) {
+                swimlaneCache.data = new Float32Array(Math.max(totalLanes, 1) * 4);
+              } else {
+                swimlaneCache.data.fill(0);
+              }
+
+              buildSwimlaneLookupInto(
+                swimlaneCache.data,
+                ml.numChannels, ml.numBankgroups, ml.numBanks,
+                expanded, rows, canvasRect.top
+              );
+
+              // @ts-expect-error - regl textures can be reinitialized by calling them as functions, but the TS types freak out for some reason.
+              yIndexTexture({
+                width: totalLanes,
+                height: 1,
+                data: swimlaneCache.data,
+                format: 'rgba',
+                type: 'float',
+                min: 'nearest',
+                mag: 'nearest',
+              });
+            }
           }
         }
 
@@ -677,19 +723,12 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
         const lod0 = lodLevels[0]!;
         let estimatedEventsInView = lod0.loadedCount;
         
-        let viewStartOffset = 0;
-        let viewEndOffset = lod0.loadedCount;
-        
-        for (let i = 0; i < lod0.chunkIndex.length; i++) {
-          if (lod0.chunkIndex[i]!.time > viewStart) break;
-          viewStartOffset = lod0.chunkIndex[i]!.offset;
-        }
-        for (let i = 0; i < lod0.chunkIndex.length; i++) {
-          if (lod0.chunkIndex[i]!.time > viewEnd) {
-            viewEndOffset = lod0.chunkIndex[i]!.offset;
-            break;
-          }
-        }
+        const startIdx0 = bisectRight(lod0.chunkIndex, viewStart);
+        const viewStartOffset = startIdx0 > 0 ? lod0.chunkIndex[startIdx0 - 1]!.offset : 0;
+
+        const endIdx0 = bisectRight(lod0.chunkIndex, viewEnd);
+        const viewEndOffset = endIdx0 < lod0.chunkIndex.length ? lod0.chunkIndex[endIdx0]!.offset : lod0.loadedCount;
+
         estimatedEventsInView = viewEndOffset - viewStartOffset;
 
         const canvasWidth = canvas.value?.width ?? 1920;
@@ -711,25 +750,11 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
         const chunkIndex = lod.chunkIndex;
         const loadedCount = lod.loadedCount;
 
-        let startOffset = 0;
-        let endOffset = loadedCount;
+        const startBisect = bisectRight(chunkIndex, viewStart);
+        const startOffset = startBisect > 0 ? chunkIndex[startBisect - 1]!.offset : 0;
 
-        for (let i = 0; i < chunkIndex.length; i++) {
-          if (chunkIndex[i]!.time > viewStart) {
-            break;
-          }
-          startOffset = chunkIndex[i]!.offset;
-        }
-
-        for (let i = 0; i < chunkIndex.length; i++) {
-          if (chunkIndex[i]!.time > viewEnd) {
-            endOffset = chunkIndex[i]!.offset;
-            break;
-          }
-          if (i === chunkIndex.length - 1) {
-            endOffset = loadedCount;
-          }
-        }
+        const endBisect = bisectRight(chunkIndex, viewEnd);
+        const endOffset = endBisect < chunkIndex.length ? chunkIndex[endBisect]!.offset : loadedCount;
 
         const count = Math.max(0, endOffset - startOffset);
 

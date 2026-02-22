@@ -25,6 +25,7 @@
 
 <script setup lang="ts">
 import type { TreeItem } from '@nuxt/ui'
+import type { RowLayout } from '~/stores/ui'
 
 const PADDING_TOP = '25px'
 const uiStore = useUIStore()
@@ -34,37 +35,60 @@ const treeContainer = ref<HTMLElement | null>(null)
 
 await useAsyncData('memoryLayoutTrace', async () => sessionStore.loadSavedMemoryLayout())
 
+// The DOM buttons appear in the same order as a depth-first tree traversal
+// respecting the current expand/collapse state, so we walk the tree structure
+// in lockstep with the DOM node list.
 const updateLayout = () => {
   if (!treeContainer.value) return
-  const rows = treeContainer.value.querySelectorAll('button[data-slot="link"]')
+  const buttons = treeContainer.value.querySelectorAll('button[data-slot="link"]')
+  if (buttons.length === 0) return
 
-  let lastEncounteredChannel: number | undefined = undefined
-  let lastEncounteredBankgroup: number | undefined = undefined
+  const ml = sessionStore.memoryLayout
+  if (!ml) return
 
-  const layout = Array.from(rows).map((rowElement) => {
-    let row = rowElement as HTMLButtonElement;
-    const rect = row.getBoundingClientRect();
+  const expandedSet = new Set(expandedState.value)
+  const layout: RowLayout[] = []
+  let domIdx = 0
 
-    if (row.innerText.includes('Channel')) {
-      let cleanInnerText = row.innerText.replace(/\n/g, ' ');
-      lastEncounteredChannel = parseInt(cleanInnerText.split(' ')[1]!);
+  for (let ch = 0; ch < ml.numChannels; ch++) {
+    const el = buttons[domIdx] as HTMLElement | undefined
+    if (!el) break
+    const rect = el.getBoundingClientRect()
+    layout.push({ top: rect.top, height: rect.height, channel: ch })
+    domIdx++
+
+    if (!expandedSet.has(`ch${ch}`)) continue
+
+    for (let bg = 0; bg < ml.numBankgroups; bg++) {
+      const bgEl = buttons[domIdx] as HTMLElement | undefined
+      if (!bgEl) break
+      const bgRect = bgEl.getBoundingClientRect()
+      layout.push({ top: bgRect.top, height: bgRect.height, channel: ch, bankgroup: bg })
+      domIdx++
+
+      if (!expandedSet.has(`ch${ch}_bg${bg}`)) continue
+
+      for (let b = 0; b < ml.numBanks; b++) {
+        const bankEl = buttons[domIdx] as HTMLElement | undefined
+        if (!bankEl) break
+        const bankRect = bankEl.getBoundingClientRect()
+        layout.push({ top: bankRect.top, height: bankRect.height, channel: ch, bankgroup: bg, bank: b })
+        domIdx++
+      }
     }
-
-    if (row.innerText.includes('Bankgroup')) {
-      let cleanInnerText = row.innerText.replace(/\n/g, ' ');
-      lastEncounteredBankgroup = parseInt(cleanInnerText.split(' ')[1]!);
-    }
-
-    let bank = undefined
-    if (row.innerText.includes('Bank') && !row.innerText.includes('Bankgroup')) {
-      let cleanInnerText = row.innerText.replace(/\n/g, ' ');
-      bank = parseInt(cleanInnerText.split(' ')[1]!);
-    }
-
-    return { top: rect.top, height: rect.height, channel: lastEncounteredChannel, bankgroup: lastEncounteredBankgroup, bank }
-  })
+  }
 
   uiStore.setRowLayout(layout)
+}
+
+// Coalesce multiple layout triggers into a single RAF to avoid redundant work.
+let layoutRafId = 0
+const scheduleLayoutUpdate = () => {
+  if (layoutRafId) return
+  layoutRafId = requestAnimationFrame(() => {
+    layoutRafId = 0
+    updateLayout()
+  })
 }
 
 let resizeObserver: ResizeObserver | null = null
@@ -77,10 +101,10 @@ onMounted(() => {
   })
 
   if (treeContainer.value) {
-    resizeObserver = new ResizeObserver(updateLayout)
+    resizeObserver = new ResizeObserver(scheduleLayoutUpdate)
     resizeObserver.observe(treeContainer.value)
 
-    mutationObserver = new MutationObserver(updateLayout)
+    mutationObserver = new MutationObserver(scheduleLayoutUpdate)
     mutationObserver.observe(treeContainer.value, { 
       childList: true, 
       subtree: true, 
@@ -88,16 +112,17 @@ onMounted(() => {
     })
   }
   
-  window.addEventListener('resize', updateLayout)
+  window.addEventListener('resize', scheduleLayoutUpdate)
   // Capture scroll events to update positions if sidebar scrolls
-  window.addEventListener('scroll', updateLayout, true)
+  window.addEventListener('scroll', scheduleLayoutUpdate, true)
 })
 
 onUnmounted(() => {
+  if (layoutRafId) cancelAnimationFrame(layoutRafId)
   resizeObserver?.disconnect()
   mutationObserver?.disconnect()
-  window.removeEventListener('resize', updateLayout)
-  window.removeEventListener('scroll', updateLayout, true)
+  window.removeEventListener('resize', scheduleLayoutUpdate)
+  window.removeEventListener('scroll', scheduleLayoutUpdate, true)
 })
 
 function getUniqueTreeItemId(chIdx: number, bgIdx?: number, bIdx?: number) {
