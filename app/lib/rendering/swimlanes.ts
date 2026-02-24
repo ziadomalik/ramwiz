@@ -3,9 +3,6 @@ import createREGL from 'regl';
 export class SwimlanesRenderer {
   yIndexTexture: createREGL.Texture;
 
-  // Swimlane texture cache to only rebuild when layout/expanded state changes.
-  private cachedDefaultExpanded: string[] | null = null;
-  private cachedDefaultExpandedCount = -1;
   private swimlaneCache = {
     layoutVersion: -1,
     canvasTop: NaN,
@@ -17,54 +14,42 @@ export class SwimlanesRenderer {
     this.yIndexTexture = this.regl.texture({ width: 1, height: 1 });
   }
 
-  // Writes swimlane lookup data into the provided Float32Array buffer (must be pre-zeroed).
-  // Maps each flat lane index (ch * maxBg * maxBank + bg * maxBank + bank) to a Y pixel center
-  // based on the current tree expand/collapse state and row layout positions.
-  private buildSwimlaneLookupInto(expandedState: string[]): void {
-
+  // Writes swimlane lookup data into the Float32Array cache.
+  // Maps each flat lane index (ch * maxBg * maxBank + bg * maxBank + bank) to a Y pixel center.
+  //
+  // RowLayout entries are ordered parent-first (channel → bankgroup → bank) from the
+  // depth-first DOM walk in trace.vue. Each entry carries its channel/bankgroup/bank
+  // identifiers. More specific rows naturally overwrite less specific ones:
+  //   1. A channel row sets ALL banks under that channel to the channel's Y.
+  //   2. A bankgroup row overwrites all banks under that bankgroup.
+  //   3. A bank row overwrites that specific bank.
+  private buildSwimlaneLookup(): void {
     if (!this.canvas) return;
     const canvasRect = this.canvas.getBoundingClientRect();
 
     const memoryLayout = useSessionStore().memoryLayout;
     if (!memoryLayout) return;
 
-    const { numChannels, numBankgroups, numBanks } = memoryLayout;
-
+    const { numBankgroups, numBanks } = memoryLayout;
     const rowLayout = useUIStore().rowLayout;
-    const expandedSet = new Set(expandedState);
 
-    // Walk the tree to understand the order of the rows in the DOM.
-    let visualRow = 0;
+    for (const row of rowLayout) {
+      if (row.channel === undefined) continue;
+      const yCenter = (row.top + row.height / 2) - canvasRect.top;
 
-    for (let ch = 0; ch < numChannels; ch++) {
-      const channelRowIdx = visualRow;
-      visualRow++;
+      // Determine the range of bankgroups and banks this row covers.
+      // A channel-level row (bankgroup undefined) covers all bankgroups and banks.
+      // A bankgroup-level row (bank undefined) covers all banks within that bankgroup.
+      // A bank-level row covers exactly one flat index.
+      const bgStart = row.bankgroup ?? 0;
+      const bgEnd = row.bankgroup ?? (numBankgroups - 1);
+      const bStart = row.bank ?? 0;
+      const bEnd = row.bank ?? (numBanks - 1);
 
-      const channelExpanded = expandedSet.has(`ch${ch}`);
-
-      for (let bg = 0; bg < numBankgroups; bg++) {
-        // If channel is collapsed, bankgroup rows don't exist in the DOM
-        let bgRowIdx = channelRowIdx;
-        if (channelExpanded) {
-          bgRowIdx = visualRow;
-          visualRow++;
-        }
-
-        const bgExpanded = channelExpanded && expandedSet.has(`ch${ch}_bg${bg}`);
-
-        for (let b = 0; b < numBanks; b++) {
-          // If bankgroup is collapsed, bank rows don't exist in the DOM
-          let bankRowIdx = bgRowIdx;
-          if (bgExpanded) {
-            bankRowIdx = visualRow;
-            visualRow++;
-          }
-
-          const flatIdx = ch * (numBankgroups * numBanks) + bg * numBanks + b;
-          const row = rowLayout[bankRowIdx];
-          if (row) {
-            this.swimlaneCache.data![flatIdx * 4] = (row.top + row.height / 2) - canvasRect.top;
-          }
+      for (let bg = bgStart; bg <= bgEnd; bg++) {
+        for (let b = bStart; b <= bEnd; b++) {
+          const flatIdx = row.channel * (numBankgroups * numBanks) + bg * numBanks + b;
+          this.swimlaneCache.data![flatIdx * 4] = yCenter;
         }
       }
     }
@@ -78,16 +63,6 @@ export class SwimlanesRenderer {
     if (!memoryLayout) return;
 
     const canvasRect = this.canvas.getBoundingClientRect();
-
-    let expanded = uiStore.expandedState;
-
-    if (expanded.length === 0) {
-      if (!this.cachedDefaultExpanded || this.cachedDefaultExpandedCount !== memoryLayout.numChannels) {
-        this.cachedDefaultExpandedCount = memoryLayout.numChannels;
-        this.cachedDefaultExpanded = Array(memoryLayout.numChannels).fill('').map((_: any, i: number) => `ch${i}`);
-      }
-      expanded = this.cachedDefaultExpanded;
-    }
 
     const totalLanes = Math.max(memoryLayout.numChannels * memoryLayout.numBankgroups * memoryLayout.numBanks, 1);
 
@@ -108,7 +83,7 @@ export class SwimlanesRenderer {
         this.swimlaneCache.data.fill(0);
       }
 
-      this.buildSwimlaneLookupInto(expanded);
+      this.buildSwimlaneLookup();
 
       // @ts-expect-error - regl textures can be reinitialized by calling them as functions, but the TS types freak out for some reason.
       this.yIndexTexture({

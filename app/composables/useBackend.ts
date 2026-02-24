@@ -73,9 +73,17 @@ export interface CommandConfig {
   clockPeriods: Record<number, number | undefined>;
 }
 
-// Get a number of trace entries starting at a specific CLK
-async function getEntries(start: number, count: number): Promise<Uint8Array> {
-  return invoke<Uint8Array>('get_trace_view', { start, count });
+// Get a number of trace entries starting at a specific index.
+// CLK values in the response are stored as f32 offsets from referenceTime
+// to preserve precision at large absolute timestamps.
+async function getEntries(start: number, count: number, referenceTime: number): Promise<Uint8Array> {
+  return invoke<Uint8Array>('get_trace_view', { start, count, referenceTime: Math.floor(referenceTime) });
+}
+
+// Get the absolute clock value of the first event in the trace (as f64).
+// Used as the reference time for relative coordinate encoding.
+async function getFirstEventTime(): Promise<number> {
+  return invoke<number>('get_first_event_time');
 }
 
 /// Given a CLK, get the index of the entry at that specific CLK
@@ -152,6 +160,7 @@ export default function useBackend() {
       getHeader,
       getDictionary,
       getEntries,
+      getFirstEventTime,
       getEntryIndexByTime
     },
     store: {

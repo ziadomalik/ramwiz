@@ -136,17 +136,21 @@ pub fn parse(mmap: &Mmap, header: &Header, index: u64) -> Result<Entry, EntryErr
     Ok(*entry)
 }
 
-pub fn get_entry_range_bytes(entries: &[Entry]) -> Vec<u8> {
+pub fn get_entry_range_bytes(entries: &[Entry], reference_time: i64) -> Vec<u8> {
     let n = entries.len();
 
     // Layout: 
     // [Start CLKs (N * 4 bytes)][Command IDs (N * 1 byte)][Channels (N * 1 byte)][Bankgroups (N * 1 byte)][Banks (N * 1 byte)]
     // TODO(ziad): Finally pin a number on the minimum & maximum values for each field. currently assuming addr vec fields fit into 1 byte.
     // Total size: N * 8 bytes.
+    //
+    // CLK values are stored as offsets from `reference_time` to preserve f32 precision.
+    // Without this, absolute clock values above ~16M lose sub-cycle precision in f32
+    // (e.g. at 100M, neighboring f32 values are 8 apart).
     let mut bytes = vec![0u8; n * 8];
 
     for (i, entry) in entries.iter().enumerate() {
-        let start_val = entry.clk.get() as f32;
+        let start_val = (entry.clk.get() - reference_time) as f32;
         let s_offset = i * 4;
         bytes[s_offset..s_offset + 4].copy_from_slice(&start_val.to_le_bytes());
     }

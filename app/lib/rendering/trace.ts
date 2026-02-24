@@ -93,6 +93,9 @@ export class TraceRenderer {
   private lookupTexture: createREGL.Texture;
   private draw: createREGL.DrawCommand;
 
+  // Absolute clock of the first event.
+  referenceTime: number = 0;
+
   lodLevels: LODLevel[] = [];
 
   constructor(private readonly regl: createREGL.Regl, private readonly canvas: HTMLCanvasElement | null) {
@@ -161,15 +164,21 @@ export class TraceRenderer {
     if (!this.canvas) return;
 
     this.swimlaneRenderer.update();
+
+    // Convert absolute view range to relative (matching GPU buffer space).
+    // This subtraction happens at f64 precision in JS; the result is small
+    // enough to fit in f32 without meaningful loss.
+    const relStart = viewState.start - this.referenceTime;
+    const relEnd = relStart + viewState.duration;
     
     // Select appropriate LOD based on events per pixel
     const lod0 = this.lodLevels[0]!;
     let estimatedEventsInView = lod0.loadedCount;
     
-    const startIdx0 = this.bisectRight(lod0.chunkIndex, viewState.start);
+    const startIdx0 = this.bisectRight(lod0.chunkIndex, relStart);
     const viewStartOffset = startIdx0 > 0 ? lod0.chunkIndex[startIdx0 - 1]!.offset : 0;
 
-    const endIdx0 = this.bisectRight(lod0.chunkIndex, viewState.start + viewState.duration);
+    const endIdx0 = this.bisectRight(lod0.chunkIndex, relEnd);
     const viewEndOffset = endIdx0 < lod0.chunkIndex.length ? lod0.chunkIndex[endIdx0]!.offset : lod0.loadedCount;
 
     estimatedEventsInView = viewEndOffset - viewStartOffset;
@@ -193,10 +202,10 @@ export class TraceRenderer {
     const chunkIndex = lod.chunkIndex;
     const loadedCount = lod.loadedCount;
 
-    const startBisect = this.bisectRight(chunkIndex, viewState.start);
+    const startBisect = this.bisectRight(chunkIndex, relStart);
     const startOffset = startBisect > 0 ? chunkIndex[startBisect - 1]!.offset : 0;
 
-    const endBisect = this.bisectRight(chunkIndex, viewState.start + viewState.duration);
+    const endBisect = this.bisectRight(chunkIndex, relEnd);
     const endOffset = endBisect < chunkIndex.length ? chunkIndex[endBisect]!.offset : loadedCount;
 
     const count = Math.max(0, endOffset - startOffset);
@@ -205,7 +214,7 @@ export class TraceRenderer {
     stats.instancesDrawn = count;
 
     this.draw({
-      viewRange: [viewState.start, viewState.start + viewState.duration],
+      viewRange: [relStart, relEnd],
       offset: startOffset,
       instances: count,
       startBuffer: lod.startBuffer,
@@ -246,18 +255,27 @@ export class TraceRenderer {
       }
       this.lookupTexture = await this.createLookupTexture();
 
+      // Fetch the first event's absolute clock at f64 precision.
+      // All GPU buffer values will be stored as (clk - referenceTime) in f32,
+      // keeping values small enough for sub-cycle precision.
+      this.referenceTime = await trace.getFirstEventTime();
+
       // Load 50k events at a time 
       const CHUNK_SIZE = 50_000;
       const START_TIME = 300;
 
-      const firstChunk = await trace.getEntries(0, 1);
+      const firstChunk = await trace.getEntries(0, 1, this.referenceTime);
       const firstData = this.decodeTraceData(firstChunk);
       if (firstData.count > 0) {
         viewState.duration = START_TIME;
+        // viewState stays in absolute time for the UI / timeline ruler.
+        viewState.minTime = this.referenceTime;
+        viewState.maxTime = this.referenceTime;
         // The 0.01 adds a small bit of padding to the left so we see the start of the timeline.
-        viewState.start = -viewState.duration * 0.01;
+        viewState.start = this.referenceTime - viewState.duration * 0.01;
 
         for (let i = 0; i < NUM_LODS; i++) {
+          // chunkIndex stores *relative* times (matching the GPU buffers).
           this.lodLevels[i]!.chunkIndex.push({ time: firstData.starts[0] ?? 0.0, offset: 0 });
         }
       }
@@ -281,14 +299,15 @@ export class TraceRenderer {
 
         const count = Math.min(CHUNK_SIZE, stats.totalEvents - offset);
 
-        const buffer = await trace.getEntries(offset, count);
+        const buffer = await trace.getEntries(offset, count, this.referenceTime);
         const data = this.decodeTraceData(buffer);
 
         if (data.count > 0) {
-          // Update the max time if we've seen a new event.
-          const lastTime = data.starts[data.count - 1]!;
-          if (lastTime > viewState.maxTime) {
-            viewState.maxTime = lastTime;
+          // data.starts are relative f32 values; convert the last one back to
+          // absolute (f64) for viewState bounds.
+          const lastAbsoluteTime = data.starts[data.count - 1]! + this.referenceTime;
+          if (lastAbsoluteTime > viewState.maxTime) {
+            viewState.maxTime = lastAbsoluteTime;
             viewState.maxDuration = (viewState.maxTime - viewState.minTime) * 1.2;
           }
 

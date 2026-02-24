@@ -100,9 +100,25 @@ fn get_entry_index_by_time(time: i64, session: State<'_, SessionState>) -> Resul
 }
 
 #[tauri::command]
+fn get_first_event_time(session: State<'_, SessionState>) -> Result<i64, String> {
+    let loader_guard = session.loader.lock().map_err(|e| e.to_string())?;
+    let loader = loader_guard
+        .as_ref()
+        .ok_or_else(|| "No trace loaded".to_string())?;
+
+    if loader.header().num_entries() == 0 {
+        return Ok(0);
+    }
+
+    let entry = loader.load_entry(0).map_err(|e| e.to_string())?;
+    Ok(entry.clk.get())
+}
+
+#[tauri::command]
 fn get_trace_view(
     start: u64,
     count: u64,
+    reference_time: i64,
     session: State<'_, SessionState>,
 ) -> Result<Response, String> {
     let loader_guard = session.loader.lock().map_err(|e| e.to_string())?;
@@ -113,7 +129,7 @@ fn get_trace_view(
     let entries = loader
         .load_entry_slice(start, count as usize)
         .map_err(|e| e.to_string())?;
-    let bytes = trace::entry::get_entry_range_bytes(entries);
+    let bytes = trace::entry::get_entry_range_bytes(entries, reference_time);
 
     Ok(Response::new(bytes))
 }
@@ -170,6 +186,7 @@ pub fn run() {
             close_session,
             get_session_info,
             get_trace_view,
+            get_first_event_time,
             get_entry_index_by_time,
             get_command_config,
             set_command_config,
