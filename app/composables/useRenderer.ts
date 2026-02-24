@@ -7,38 +7,7 @@
 import createREGL from 'regl';
 import type { CommandConfig } from '@/composables/useBackend';
 import { useUIStore } from '~/stores/ui';
-
-const gridVert = `
-precision highp float;
-attribute vec2 position;
-attribute float yScreen;
-
-uniform float u_resolution_y;
-
-void main() {
-  float thickness = 0.25; 
-
-  // yScreen is the top edge of the line in screen pixels relative to canvas top
-  // TODO(ziad): The 4.0 just makes it align with the accordion menu items, idk how to do this automatically.
-  float finalY = yScreen + (position.y - 4.0) * thickness;
-  
-  // Convert to NDC. Screen Y=0 -> NDC=1, Screen Y=H -> NDC=-1
-  float ndcY = 1.0 - (finalY / u_resolution_y) * 2.0;
-  
-  // X is 0..1 -> -1..1
-  float ndcX = position.x * 2.0 - 1.0;
-  
-  gl_Position = vec4(ndcX, ndcY, 0, 1);
-}
-`
-
-const gridFrag = `
-precision highp float;
-void main() {
-  // TODO(ziad): Match color the scheme.
-  gl_FragColor = vec4(0.3, 0.3, 0.3, 1.0);
-}
-`
+import { GridRenderer } from '@/lib/rendering/grid';
 
 const vert = `
 precision highp float;
@@ -552,23 +521,7 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
       lookupTexture = regl.texture({ width: 1, height: 1 });
       yIndexTexture = regl.texture({ width: 1, height: 1 });
 
-      const gridBuffer = regl.buffer({ length: 0, type: 'float', usage: 'dynamic' });
-      const drawGrid = regl({
-        vert: gridVert,
-        frag: gridFrag,
-        attributes: {
-          position: [[0, 0], [1, 0], [0, 1], [0, 1], [1, 0], [1, 1]],
-          yScreen: {
-            buffer: gridBuffer,
-            divisor: 1
-          }
-        },
-        uniforms: {
-          u_resolution_y: (ctx: any) => ctx.viewportHeight
-        },
-        instances: (ctx: any, props: any) => props.count,
-        count: 6
-      });
+      const gridRenderer = new GridRenderer(regl, canvas.value);
 
       let draw = regl<any, any, DrawProps>({
         vert,
@@ -639,19 +592,7 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
           const canvasRect = canvas.value.getBoundingClientRect();
           const rows = uiStore.rowLayout;
 
-          const lines = new Float32Array(rows.length * 2);
-          let count = 0;
-          
-          // The UTree items contain a ul element with child items, we take it's bottom edge and render the grid line there.
-          for (let i = 0; i < rows.length; i++) {
-             const row = rows[i];
-             if (row) {
-                lines[count++] = row.top + row.height - canvasRect.top;
-             }
-          }
-          
-          gridBuffer(lines.subarray(0, count));
-          drawGrid({ count: count });
+          gridRenderer.update();
 
           // Update swimlane lookup texture only when layout/expanded state actually changes.
           const ml = sessionStore.memoryLayout;
