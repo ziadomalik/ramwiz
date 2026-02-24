@@ -3,7 +3,7 @@ import createREGL from 'regl';
 export class SwimlanesRenderer {
   yIndexTexture: createREGL.Texture;
 
-  private swimlaneCache = {
+  swimlaneCache = {
     layoutVersion: -1,
     canvasTop: NaN,
     totalLanes: 0,

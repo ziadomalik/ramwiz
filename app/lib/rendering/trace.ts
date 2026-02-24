@@ -80,6 +80,24 @@ interface LODLevel {
   chunkIndex: { time: number; offset: number }[];
   loadedCount: number;
   totalCount: number;
+
+  // For hit data, keep a buffer of the original data for CPU-side lookups.
+  // TODO(ziad): Is this gonna be a memory problem?
+  cpuStarts: Float32Array;
+  cpuCmds: Uint8Array;
+  cpuChannels: Uint8Array;
+  cpuBankgroups: Uint8Array;
+  cpuBanks: Uint8Array;
+}
+
+export interface HitResult {
+  eventIndex: number;
+  start: number;
+  duration: number;
+  cmdId: number;
+  channel: number;
+  bankgroup: number;
+  bank: number;
 }
 
 const LOD_FACTORS = [1, 2, 3];
@@ -92,6 +110,8 @@ export class TraceRenderer {
   private swimlaneRenderer: SwimlanesRenderer;
   private lookupTexture: createREGL.Texture;
   private draw: createREGL.DrawCommand;
+
+  private cmdDurations: Float32Array = new Float32Array(256);
 
   // Absolute clock of the first event.
   referenceTime: number = 0;
@@ -250,7 +270,12 @@ export class TraceRenderer {
           bankBuffer: this.regl.buffer({ length: lodCount, type: 'uint8', usage: 'dynamic' }),
           chunkIndex: [],
           loadedCount: 0,
-          totalCount: lodCount
+          totalCount: lodCount,
+          cpuStarts: new Float32Array(lodCount),
+          cpuCmds: new Uint8Array(lodCount),
+          cpuChannels: new Uint8Array(lodCount),
+          cpuBankgroups: new Uint8Array(lodCount),
+          cpuBanks: new Uint8Array(lodCount),
         });
       }
       this.lookupTexture = await this.createLookupTexture();
@@ -345,6 +370,13 @@ export class TraceRenderer {
               lod.channelBuffer.subdata(tempChannels.subarray(0, lodWriteIdx), lodOffsets[lodIdx] * 1);
               lod.bankgroupBuffer.subdata(tempBankgroups.subarray(0, lodWriteIdx), lodOffsets[lodIdx] * 1);
               lod.bankBuffer.subdata(tempBanks.subarray(0, lodWriteIdx), lodOffsets[lodIdx] * 1);
+
+              // Copy to CPU arrays for hit testing
+              lod.cpuStarts.set(tempStarts.subarray(0, lodWriteIdx), lodOffsets[lodIdx]);
+              lod.cpuCmds.set(tempCmds.subarray(0, lodWriteIdx), lodOffsets[lodIdx]);
+              lod.cpuChannels.set(tempChannels.subarray(0, lodWriteIdx), lodOffsets[lodIdx]);
+              lod.cpuBankgroups.set(tempBankgroups.subarray(0, lodWriteIdx), lodOffsets[lodIdx]);
+              lod.cpuBanks.set(tempBanks.subarray(0, lodWriteIdx), lodOffsets[lodIdx]);
               
               lodOffsets[lodIdx] += lodWriteIdx;
               lod.loadedCount = lodOffsets[lodIdx];
@@ -406,6 +438,11 @@ export class TraceRenderer {
       const id = parseInt(idStr);
       if (id < 0 || id > 255) continue;
       if (dur) data[id * 4 + 3] = dur;
+
+      // Also populate `cmdDurations` for the hit testing logic.
+      if (id >= 0 && id <= 255 && dur) {
+        this.cmdDurations[id] = dur;
+      }
     }
 
     return this.regl.texture({
@@ -442,6 +479,74 @@ export class TraceRenderer {
     while (lo < hi) {
       const mid = (lo + hi) >>> 1;
       if (index[mid]!.time <= time) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }
+
+  hitTest(mouseX: number, mouseY: number, viewState: ViewState): HitResult | null { 
+    if (!this.canvas) return null;
+
+    const canvasWidth = this.canvas.width;
+
+    if (this.lodLevels.length === 0) return null;
+
+    const lod = this.lodLevels[0]!; // The finest LOD level.
+    if (lod.loadedCount === 0) return null;
+
+    // Convert mouse's X position to relative time. 
+    const relStart = viewState.start - this.referenceTime;
+    const relTime = relStart + (mouseX / canvasWidth) * viewState.duration;
+
+    // Get swimlane data for Y checking
+    const memoryLayout = useSessionStore().memoryLayout;
+    if (!memoryLayout) return null;
+    const { numBankgroups, numBanks } = memoryLayout;
+    // TODO(ziad): This matches the shaders `u_rowHeight` uniform but we gotta make it dynamic.
+    const rowHeight = 16.0;
+
+    const swimlaneData = this.swimlaneRenderer.swimlaneCache.data;
+    if (!swimlaneData) return null;
+
+    // Binary search directly on cpuStarts to find the first event where start > relTime
+    const bisectIdx = this.bisectRightStarts(lod.cpuStarts, relTime, lod.loadedCount);
+    
+    // Search window: go back to catch events whose start + duration covers relTime
+    // Events are sorted by start time, so we need to look backwards for events
+    // that started before relTime but might still be active (start + duration > relTime)
+    const searchStart = Math.max(0, bisectIdx - 500);
+    const searchEnd = Math.min(lod.loadedCount, bisectIdx + 100);
+
+    for (let i = searchStart; i < searchEnd; i++) {
+      const eventStart = lod.cpuStarts[i]!;
+      const cmdId = lod.cpuCmds[i]!;
+      const duration = this.cmdDurations[cmdId] ?? 10;
+      
+      // Check time intersection: event spans [eventStart, eventStart + duration]
+      if (relTime < eventStart || relTime > eventStart + duration) continue;
+      
+      // Check Y intersection
+      const channel = lod.cpuChannels[i]!;
+      const bankgroup = lod.cpuBankgroups[i]!;
+      const bank = lod.cpuBanks[i]!;
+      
+      const laneIdx = channel * (numBankgroups * numBanks) + bankgroup * numBanks + bank;
+      const yCenter = swimlaneData[laneIdx * 4] ?? 0;
+      
+      if (Math.abs(mouseY - yCenter) <= rowHeight / 2) {
+        return { eventIndex: i, start: eventStart, duration, cmdId, channel, bankgroup, bank };
+      }
+    }
+    
+    return null;
+  }
+
+  // Binary search on cpuStarts array (upper bound)
+  private bisectRightStarts(starts: Float32Array, time: number, count: number): number {
+    let lo = 0, hi = count;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (starts[mid]! <= time) lo = mid + 1;
       else hi = mid;
     }
     return lo;

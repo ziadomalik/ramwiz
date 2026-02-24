@@ -8,18 +8,23 @@
 import createREGL from 'regl';
 
 import { GridRenderer } from '@/lib/rendering/grid';
-import { TraceRenderer } from '@/lib/rendering/trace';
+import { TraceRenderer, type HitResult } from '@/lib/rendering/trace';
 import { ViewHelpers } from '~/lib/rendering/viewHelpers';
 import type { ViewState, Stats } from '@/lib/rendering/types';
 
 export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
   let traceRenderer: TraceRenderer | null = null;
+  const hoveredEvent: Ref<HitResult | null> = ref(null);
+  const mouseX = ref(0);
+  const mouseY = ref(0);
 
   const { trace } = useBackend();
 
   let regl: createREGL.Regl | null = null;
   let abortController: AbortController | null = null;
   let viewHelpers: ViewHelpers | null = null;
+  let handleHover: ((e: MouseEvent) => void) | null = null;
+  let handleMouseLeave: (() => void) | null = null;
 
   const viewState: ViewState = reactive({
     start: 0,
@@ -46,11 +51,16 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
       abortController.abort();
     }
 
-    if (viewHelpers) {
-      if (canvas.value) {
+    if (canvas.value) {
+      if (viewHelpers) {
         canvas.value.removeEventListener('wheel', viewHelpers.handleMouseWheel);
         canvas.value.removeEventListener('mousedown', viewHelpers.handleMouseDown);
       }
+      if (handleHover) canvas.value.removeEventListener('mousemove', handleHover);
+      if (handleMouseLeave) canvas.value.removeEventListener('mouseleave', handleMouseLeave);
+    }
+
+    if (viewHelpers) {
       window.removeEventListener('mousemove', viewHelpers.handleMouseMove);
       window.removeEventListener('mouseup', viewHelpers.handleMouseUp);
       window.removeEventListener('resize', viewHelpers.resize);
@@ -133,6 +143,28 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
       window.addEventListener('mouseup', viewHelpers.handleMouseUp);
       window.addEventListener('resize', viewHelpers.resize);
 
+      // Handle hit testing for the hovered event.
+      handleHover = (e: MouseEvent) => {
+        if (!traceRenderer || !canvas.value) return;
+
+        const rect = canvas.value.getBoundingClientRect();
+        const localX = e.clientX - rect.left;
+        const localY = e.clientY - rect.top;
+
+        // Track mouse position relative to the page for popup positioning
+        mouseX.value = e.clientX;
+        mouseY.value = e.clientY;
+
+        hoveredEvent.value = traceRenderer.hitTest(localX, localY, viewState);
+      };
+
+      handleMouseLeave = () => {
+        hoveredEvent.value = null;
+      };
+
+      canvas.value.addEventListener('mousemove', handleHover);
+      canvas.value.addEventListener('mouseleave', handleMouseLeave);
+
       viewHelpers.resize();
       startStream();
 
@@ -141,5 +173,5 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
     }
   });
 
-  return { stats, viewState }
+  return { stats, viewState, hoveredEvent, mouseX, mouseY }
 };
