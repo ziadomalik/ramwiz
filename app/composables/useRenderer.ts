@@ -13,6 +13,8 @@ import { ViewHelpers } from '~/lib/rendering/viewHelpers';
 import type { ViewState, Stats } from '@/lib/rendering/types';
 
 export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
+  const HOVER_MIN_PIXELS_PER_CLK = 0.5;
+
   let traceRenderer: TraceRenderer | null = null;
   const hoveredEvent: Ref<HitResult | null> = ref(null);
   const mouseX = ref(0);
@@ -154,6 +156,12 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
         // Track mouse position relative to the page for popup positioning
         mouseX.value = e.clientX;
         mouseY.value = e.clientY;
+
+        const pixelsPerClk = canvas.value.width / Math.max(viewState.duration, 1);
+        if (pixelsPerClk < HOVER_MIN_PIXELS_PER_CLK) {
+          hoveredEvent.value = null;
+          return;
+        }
 
         hoveredEvent.value = traceRenderer.hitTest(localX, localY, viewState);
       };

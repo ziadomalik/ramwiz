@@ -22,8 +22,9 @@
   </div>
   <div 
     v-if="hoveredEvent"
+    ref="tooltip"
     class="fixed z-50 bg-zinc-800/95 backdrop-blur-sm px-3 py-2.5 rounded-lg shadow-xl border border-zinc-700/50 pointer-events-none text-zinc-200"
-    :style="{ left: (mouseX + 12) + 'px', top: (mouseY + 12) + 'px' }"
+    :style="tooltipStyle"
   >
     <!-- Header -->
     <div class="flex items-center gap-2">
@@ -60,5 +61,32 @@ const color = computed(() => sessionStore.getCommandColor(hoveredEvent.value?.cm
 const name = computed(() => sessionStore.getCommandName(hoveredEvent.value?.cmdId ?? 0));
 
 const canvas = ref<HTMLCanvasElement | null>(null);
+const tooltip = ref<HTMLDivElement | null>(null);
 const { stats, viewState, hoveredEvent, mouseX, mouseY } = useRenderer(canvas);
+
+const tooltipStyle = computed(() => {
+  const offset = 12;
+  const padding = 8;
+  let left = mouseX.value + offset;
+  let top = mouseY.value + offset;
+
+  if (!import.meta.client) {
+    return { left: `${left}px`, top: `${top}px` };
+  }
+
+  const tooltipWidth = tooltip.value?.offsetWidth ?? 260;
+  const tooltipHeight = tooltip.value?.offsetHeight ?? 120;
+
+  if (left + tooltipWidth > window.innerWidth - padding) {
+    left = mouseX.value - tooltipWidth - offset;
+  }
+  if (top + tooltipHeight > window.innerHeight - padding) {
+    top = mouseY.value - tooltipHeight - offset;
+  }
+
+  left = Math.max(padding, left);
+  top = Math.max(padding, top);
+
+  return { left: `${left}px`, top: `${top}px` };
+});
 </script>
