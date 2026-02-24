@@ -88,6 +88,9 @@ interface LODLevel {
   cpuChannels: Uint8Array;
   cpuBankgroups: Uint8Array;
   cpuBanks: Uint8Array;
+  cpuRanks: Uint8Array;
+  cpuRows: Int32Array;
+  cpuColumns: Int32Array;
 }
 
 export interface HitResult {
@@ -98,6 +101,9 @@ export interface HitResult {
   channel: number;
   bankgroup: number;
   bank: number;
+  rank: number;
+  row: number;
+  column: number;
 }
 
 const LOD_FACTORS = [1, 2, 3];
@@ -276,6 +282,9 @@ export class TraceRenderer {
           cpuChannels: new Uint8Array(lodCount),
           cpuBankgroups: new Uint8Array(lodCount),
           cpuBanks: new Uint8Array(lodCount),
+          cpuRanks: new Uint8Array(lodCount),
+          cpuRows: new Int32Array(lodCount),
+          cpuColumns: new Int32Array(lodCount),
         });
       }
       this.lookupTexture = await this.createLookupTexture();
@@ -310,6 +319,9 @@ export class TraceRenderer {
       const lodTempChannels: Uint8Array[] = LOD_FACTORS.map(f => new Uint8Array(Math.ceil(CHUNK_SIZE / f)));
       const lodTempBankgroups: Uint8Array[] = LOD_FACTORS.map(f => new Uint8Array(Math.ceil(CHUNK_SIZE / f)));
       const lodTempBanks: Uint8Array[] = LOD_FACTORS.map(f => new Uint8Array(Math.ceil(CHUNK_SIZE / f)));
+      const lodTempRanks: Uint8Array[] = LOD_FACTORS.map(f => new Uint8Array(Math.ceil(CHUNK_SIZE / f)));
+      const lodTempRows: Int32Array[] = LOD_FACTORS.map(f => new Int32Array(Math.ceil(CHUNK_SIZE / f)));
+      const lodTempColumns: Int32Array[] = LOD_FACTORS.map(f => new Int32Array(Math.ceil(CHUNK_SIZE / f)));
       
       // Track offsets for each LOD level separately
       const lodOffsets = new Array(NUM_LODS).fill(0);
@@ -345,6 +357,9 @@ export class TraceRenderer {
             const tempChannels = lodTempChannels[lodIdx]!;
             const tempBankgroups = lodTempBankgroups[lodIdx]!;
             const tempBanks = lodTempBanks[lodIdx]!;
+            const tempRanks = lodTempRanks[lodIdx]!;
+            const tempRows = lodTempRows[lodIdx]!;
+            const tempColumns = lodTempColumns[lodIdx]!;
             
             let lodWriteIdx = 0;
             
@@ -356,6 +371,9 @@ export class TraceRenderer {
                 tempChannels[lodWriteIdx] = data.channels[i]!;
                 tempBankgroups[lodWriteIdx] = data.bankgroups[i]!;
                 tempBanks[lodWriteIdx] = data.banks[i]!;
+                tempRanks[lodWriteIdx] = data.ranks[i]!;
+                tempRows[lodWriteIdx] = data.rows[i]!;
+                tempColumns[lodWriteIdx] = data.columns[i]!;
                 lodWriteIdx++;
               }
             }
@@ -377,6 +395,9 @@ export class TraceRenderer {
               lod.cpuChannels.set(tempChannels.subarray(0, lodWriteIdx), lodOffsets[lodIdx]);
               lod.cpuBankgroups.set(tempBankgroups.subarray(0, lodWriteIdx), lodOffsets[lodIdx]);
               lod.cpuBanks.set(tempBanks.subarray(0, lodWriteIdx), lodOffsets[lodIdx]);
+              lod.cpuRanks.set(tempRanks.subarray(0, lodWriteIdx), lodOffsets[lodIdx]);
+              lod.cpuRows.set(tempRows.subarray(0, lodWriteIdx), lodOffsets[lodIdx]);
+              lod.cpuColumns.set(tempColumns.subarray(0, lodWriteIdx), lodOffsets[lodIdx]);
               
               lodOffsets[lodIdx] += lodWriteIdx;
               lod.loadedCount = lodOffsets[lodIdx];
@@ -459,18 +480,22 @@ export class TraceRenderer {
   private decodeTraceData(input: Uint8Array | ArrayBuffer | number[]) {
     const array = input instanceof Uint8Array ? input : new Uint8Array(input as any);
 
-    // Each entry is 8 bytes: 4 bytes for start + 1 byte for cmd id + 1 byte for channel + 1 byte for bankgroup + 1 byte for bank.
-    const N = array.byteLength / 8;
+    // Each entry is 17 bytes (4-byte fields first for alignment):
+    //   [Start CLKs (N*4B)][Rows (N*4B)][Columns (N*4B)]
+    //   [Cmd IDs (N*1B)][Channels (N*1B)][Bankgroups (N*1B)][Banks (N*1B)][Ranks (N*1B)]
+    const N = array.byteLength / 17;
 
-    const startBytes = N * 4;
+    const base = array.byteOffset;
+    const startView = new Float32Array(array.buffer, base, N);
+    const rowView = new Int32Array(array.buffer, base + N * 4, N);
+    const columnView = new Int32Array(array.buffer, base + N * 8, N);
+    const cmdView = new Uint8Array(array.buffer, base + N * 12, N);
+    const channelView = new Uint8Array(array.buffer, base + N * 13, N);
+    const bankgroupView = new Uint8Array(array.buffer, base + N * 14, N);
+    const bankView = new Uint8Array(array.buffer, base + N * 15, N);
+    const rankView = new Uint8Array(array.buffer, base + N * 16, N);
 
-    const startView = new Float32Array(array.buffer, array.byteOffset, N);
-    const cmdView = new Uint8Array(array.buffer, array.byteOffset + startBytes, N);
-    const channelView = new Uint8Array(array.buffer, array.byteOffset + startBytes + N, N);
-    const bankgroupView = new Uint8Array(array.buffer, array.byteOffset + startBytes + (2 * N), N);
-    const bankView = new Uint8Array(array.buffer, array.byteOffset + startBytes + (3 * N), N);
-
-    return { starts: startView, cmds: cmdView, channels: channelView, bankgroups: bankgroupView, banks: bankView, count: N };
+    return { starts: startView, cmds: cmdView, channels: channelView, bankgroups: bankgroupView, banks: bankView, ranks: rankView, rows: rowView, columns: columnView, count: N };
   }
 
   // Binary search helper (upper bound) to return the first index where chunkIndex[i].time > time.
@@ -534,7 +559,10 @@ export class TraceRenderer {
       const yCenter = swimlaneData[laneIdx * 4] ?? 0;
       
       if (Math.abs(mouseY - yCenter) <= rowHeight / 2) {
-        return { eventIndex: i, start: eventStart, duration, cmdId, channel, bankgroup, bank };
+        const rank = lod.cpuRanks[i]!;
+        const row = lod.cpuRows[i]!;
+        const column = lod.cpuColumns[i]!;
+        return { eventIndex: i, start: eventStart, duration, cmdId, channel, bankgroup, bank, rank, row, column };
       }
     }
     
