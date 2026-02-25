@@ -6,6 +6,9 @@
       :event-count="stats.eventCount" 
       :total-events="stats.totalEvents"
       :current-lod="stats.currentLod"
+      :violation-count="stats.violationCount"
+      @prev-violation="goToPrevViolation"
+      @next-violation="goToNextViolation"
     />
     <DevOnly>
       <DevInfoBar
@@ -47,6 +50,17 @@
       <span><span class="text-zinc-500">ROW</span> {{ hoveredEvent.row }}</span>
       <span><span class="text-zinc-500">COL</span> {{ hoveredEvent.column }}</span>
     </div>
+
+    <!-- Violation details -->
+    <template v-if="hoveredEvent.violation">
+      <div class="border-t border-red-700/40 my-2" />
+      <div class="flex items-center gap-1.5 mb-1">
+        <span class="text-red-400 text-xs font-semibold">⚠ Timing Violation</span>
+      </div>
+      <ul class="text-[11px] text-red-300/80 space-y-0.5 pl-3.5 list-disc">
+        <li v-for="reason in hoveredEvent.violationReasons" :key="reason">{{ reason }}</li>
+      </ul>
+    </template>
   </div>
 </template>
 
@@ -62,7 +76,7 @@ const name = computed(() => sessionStore.getCommandName(hoveredEvent.value?.cmdI
 
 const canvas = ref<HTMLCanvasElement | null>(null);
 const tooltip = ref<HTMLDivElement | null>(null);
-const { stats, viewState, hoveredEvent, mouseX, mouseY } = useRenderer(canvas);
+const { stats, viewState, hoveredEvent, mouseX, mouseY, goToNextViolation, goToPrevViolation } = useRenderer(canvas);
 
 const tooltipStyle = computed(() => {
   const offset = 12;

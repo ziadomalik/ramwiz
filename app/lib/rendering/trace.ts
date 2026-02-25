@@ -1,6 +1,9 @@
 import createREGL from 'regl';
 import { SwimlanesRenderer } from '@/lib/rendering/swimlanes';
+import { getViolationReasons } from '@/lib/rendering/constraints';
+import type { ConstraintRule } from '@/composables/useBackend';
 import type { Stats, ViewState } from '@/lib/rendering/types';
+import type { WorkerInput, WorkerOutput } from '@/lib/rendering/constraintWorker';
 
 const vert = `
 precision highp float;
@@ -11,6 +14,7 @@ attribute float instanceCmdId;
 attribute float instanceChannel;
 attribute float instanceBankgroup;
 attribute float instanceBank;
+attribute float instanceViolation;
 
 uniform sampler2D u_lookupTable;
 uniform sampler2D u_swimlaneLookup;
@@ -22,6 +26,7 @@ uniform float u_swimlaneSize;
 uniform float u_rowHeight;
 
 varying vec3 vColor;
+varying float vViolation;
 
 void main() {
   // Command properties lookup
@@ -29,6 +34,7 @@ void main() {
   vec4 properties = texture2D(u_lookupTable, cmdUv);
   vColor = properties.rgb;
   float duration = properties.a;
+  vViolation = instanceViolation;
 
   // X: map world time to NDC
   float viewWidth = u_viewRange.y - u_viewRange.x;
@@ -54,9 +60,12 @@ void main() {
 const frag = `
 precision highp float;
 varying vec3 vColor;
+varying float vViolation;
 
 void main() {
-  gl_FragColor = vec4(vColor, 1.0);
+  vec3 violationColor = vec3(1.0, 0.15, 0.15);
+  vec3 finalColor = mix(vColor, violationColor, vViolation * 0.7);
+  gl_FragColor = vec4(finalColor, 1.0);
 }
 `;
 
@@ -69,6 +78,7 @@ interface DrawProps {
   channelBuffer: createREGL.Buffer;
   bankgroupBuffer: createREGL.Buffer;
   bankBuffer: createREGL.Buffer;
+  violationBuffer: createREGL.Buffer;
 }
 
 interface LODLevel {
@@ -77,6 +87,7 @@ interface LODLevel {
   channelBuffer: createREGL.Buffer;
   bankgroupBuffer: createREGL.Buffer;
   bankBuffer: createREGL.Buffer;
+  violationBuffer: createREGL.Buffer;
   chunkIndex: { time: number; offset: number }[];
   loadedCount: number;
   totalCount: number;
@@ -91,6 +102,7 @@ interface LODLevel {
   cpuRanks: Uint8Array;
   cpuRows: Int32Array;
   cpuColumns: Int32Array;
+  cpuViolations: Uint8Array;
 }
 
 export interface HitResult {
@@ -104,6 +116,8 @@ export interface HitResult {
   rank: number;
   row: number;
   column: number;
+  violation: boolean;
+  violationReasons: string[];
 }
 
 const LOD_FACTORS = [1, 2, 3];
@@ -161,6 +175,12 @@ export class TraceRenderer {
         },
         instanceBank: {
           buffer: (ctx: any, props: DrawProps) => props.bankBuffer,
+          divisor: 1,
+          normalized: false,
+          offset: (ctx: any, props: DrawProps) => props.offset * 1
+        },
+        instanceViolation: {
+          buffer: (ctx: any, props: DrawProps) => props.violationBuffer,
           divisor: 1,
           normalized: false,
           offset: (ctx: any, props: DrawProps) => props.offset * 1
@@ -248,11 +268,21 @@ export class TraceRenderer {
       channelBuffer: lod.channelBuffer,
       bankgroupBuffer: lod.bankgroupBuffer,
       bankBuffer: lod.bankBuffer,
+      violationBuffer: lod.violationBuffer,
     });
   }
 
   async start(stats: Stats, viewState: ViewState, signal: AbortSignal) {
     const { trace } = useBackend();
+
+    // Grab constraint rules once upfront and strip Vue reactivity so they're
+    // safe to postMessage to workers without re-serialising every batch.
+    const sessionStore = useSessionStore();
+    const constraintConfig = sessionStore.constraintConfig;
+    const plainRules: ConstraintRule[] | null =
+      constraintConfig && constraintConfig.rules.length > 0
+        ? JSON.parse(JSON.stringify(constraintConfig.rules))
+        : null;
 
     try {
       for (const lod of this.lodLevels) {
@@ -261,6 +291,7 @@ export class TraceRenderer {
         lod.channelBuffer.destroy();
         lod.bankgroupBuffer.destroy();
         lod.bankBuffer.destroy();
+        lod.violationBuffer.destroy();
       }
       this.lodLevels.length = 0;
 
@@ -274,6 +305,7 @@ export class TraceRenderer {
           channelBuffer: this.regl.buffer({ length: lodCount, type: 'uint8', usage: 'dynamic' }),
           bankgroupBuffer: this.regl.buffer({ length: lodCount, type: 'uint8', usage: 'dynamic' }),
           bankBuffer: this.regl.buffer({ length: lodCount, type: 'uint8', usage: 'dynamic' }),
+          violationBuffer: this.regl.buffer({ length: lodCount, type: 'uint8', usage: 'dynamic' }),
           chunkIndex: [],
           loadedCount: 0,
           totalCount: lodCount,
@@ -285,6 +317,7 @@ export class TraceRenderer {
           cpuRanks: new Uint8Array(lodCount),
           cpuRows: new Int32Array(lodCount),
           cpuColumns: new Int32Array(lodCount),
+          cpuViolations: new Uint8Array(lodCount),
         });
       }
       this.lookupTexture = await this.createLookupTexture();
@@ -328,6 +361,13 @@ export class TraceRenderer {
       
       // Global index for proper decimation alignment
       let globalEventIndex = 0;
+
+      // ── Streaming violation state ──────────────────────────────
+      // Fire off a worker every VIOLATION_BATCH events.  Only one in-flight at
+      // a time; data loading continues in parallel on the main thread.
+      const VIOLATION_BATCH = 200_000;
+      let violationWorkerBusy = false;
+      let lastViolationSnapshot = 0;   // loadedCount at last worker dispatch
 
       // Load the chunks until we reach the end of the buffer.
       let offset = 0;
@@ -410,7 +450,24 @@ export class TraceRenderer {
 
         stats.eventCount = this.lodLevels[0]?.loadedCount ?? 0;
 
+        const loaded = this.lodLevels[0]?.loadedCount ?? 0;
+        if (plainRules && !violationWorkerBusy && loaded - lastViolationSnapshot >= VIOLATION_BATCH) {
+          violationWorkerBusy = true;
+          lastViolationSnapshot = loaded;
+          // Fire-and-forget: the worker runs in parallel while chunks keep loading.
+          this.applyViolations(plainRules).then(c => {
+            stats.violationCount = c;
+            violationWorkerBusy = false;
+          }).catch(() => { violationWorkerBusy = false; });
+        }
+
         await new Promise(resolve => requestAnimationFrame(resolve));
+      }
+
+      // Final violation pass covering all loaded events (catches the tail end
+      // plus any cross-boundary violations missed by earlier batches).
+      if (plainRules) {
+        stats.violationCount = await this.applyViolations(plainRules);
       }
     } catch (error) {
       console.log('Streaming Error: ', error);
@@ -475,6 +532,82 @@ export class TraceRenderer {
       min: 'nearest',
       mag: 'nearest'
     });
+  }
+
+  // Detect violations in parallel using a web worker and upload to GPU
+  async applyViolations(rules: ConstraintRule[]): Promise<number> {
+    if (this.lodLevels.length === 0) return 0;
+
+    const lod0 = this.lodLevels[0]!;
+    const n = lod0.loadedCount;
+    if (n === 0) return 0;
+
+    const workerData: WorkerInput = {
+      data: {
+        starts: lod0.cpuStarts.slice(0, n),
+        cmds: lod0.cpuCmds.slice(0, n),
+        channels: lod0.cpuChannels.slice(0, n),
+        bankgroups: lod0.cpuBankgroups.slice(0, n),
+        banks: lod0.cpuBanks.slice(0, n),
+        ranks: lod0.cpuRanks.slice(0, n),
+        count: n,
+      },
+      rules,
+    };
+
+    const { violations, count } = await new Promise<WorkerOutput>((resolve, reject) => {
+      const worker = new Worker(
+        new URL('./constraintWorker.ts', import.meta.url),
+        { type: 'module' },
+      );
+
+      worker.onmessage = (e: MessageEvent<WorkerOutput>) => {
+        worker.terminate();
+        resolve(e.data);
+      };
+
+      worker.onerror = (e) => {
+        worker.terminate();
+        reject(new Error(`Constraint worker error: ${e.message}`));
+      };
+
+      // Transfer the copied buffers to the worker (zero-copy send).
+      worker.postMessage(workerData, [
+        workerData.data.starts.buffer,
+        workerData.data.cmds.buffer,
+        workerData.data.channels.buffer,
+        workerData.data.bankgroups.buffer,
+        workerData.data.banks.buffer,
+        workerData.data.ranks.buffer,
+      ]);
+    });
+
+    // Upload LOD 0 violations to CPU + GPU
+    const violationsU8 = new Uint8Array(violations.buffer);
+    lod0.cpuViolations.set(violationsU8.subarray(0, n));
+    lod0.violationBuffer.subdata(violationsU8.subarray(0, n));
+
+    // Propagate to coarser LOD levels:
+    // a coarse-LOD event is flagged if ANY event in its decimation window has a violation.
+    for (let lodIdx = 1; lodIdx < this.lodLevels.length; lodIdx++) {
+      const coarseLod = this.lodLevels[lodIdx]!;
+      const factor = LOD_FACTORS[lodIdx]!;
+
+      for (let i = 0; i < coarseLod.loadedCount; i++) {
+        const baseIdx = i * factor;
+        let v = 0;
+        for (let k = baseIdx; k < Math.min(baseIdx + factor, n); k++) {
+          if (violationsU8[k]) { v = 1; break; }
+        }
+        coarseLod.cpuViolations[i] = v;
+      }
+
+      coarseLod.violationBuffer.subdata(
+        coarseLod.cpuViolations.subarray(0, coarseLod.loadedCount)
+      );
+    }
+
+    return count;
   }
 
   private decodeTraceData(input: Uint8Array | ArrayBuffer | number[]) {
@@ -562,10 +695,58 @@ export class TraceRenderer {
         const rank = lod.cpuRanks[i]!;
         const row = lod.cpuRows[i]!;
         const column = lod.cpuColumns[i]!;
-        return { eventIndex: i, start: eventStart, duration, cmdId, channel, bankgroup, bank, rank, row, column };
+        const violation = !!(lod.cpuViolations[i]);
+
+        // Compute violation reasons lazily — only when hovering a violated event.
+        let violationReasons: string[] = [];
+        if (violation) {
+          const sessionStore = useSessionStore();
+          const rules = sessionStore.constraintConfig?.rules;
+          if (rules && rules.length > 0) {
+            violationReasons = getViolationReasons({
+              starts: lod.cpuStarts,
+              cmds: lod.cpuCmds,
+              channels: lod.cpuChannels,
+              bankgroups: lod.cpuBankgroups,
+              banks: lod.cpuBanks,
+              ranks: lod.cpuRanks,
+              count: lod.loadedCount,
+            }, i, rules);
+          }
+        }
+
+        return { eventIndex: i, start: eventStart, duration, cmdId, channel, bankgroup, bank, rank, row, column, violation, violationReasons };
       }
     }
     
+    return null;
+  }
+
+  // Jump to the next violation after the current view center
+  findNextViolation(relTime: number): number | null {
+    if (this.lodLevels.length === 0) return null;
+    const lod = this.lodLevels[0]!;
+    const startIdx = this.bisectRightStarts(lod.cpuStarts, relTime, lod.loadedCount);
+
+    for (let i = startIdx; i < lod.loadedCount; i++) {
+      if (lod.cpuViolations[i]) {
+        return lod.cpuStarts[i]! + this.referenceTime;
+      }
+    }
+    return null;
+  }
+
+  // Jump to the previous violation before the current view center
+  findPrevViolation(relTime: number): number | null {
+    if (this.lodLevels.length === 0) return null;
+    const lod = this.lodLevels[0]!;
+    const endIdx = this.bisectRightStarts(lod.cpuStarts, relTime, lod.loadedCount);
+
+    for (let i = endIdx - 1; i >= 0; i--) {
+      if (lod.cpuViolations[i]) {
+        return lod.cpuStarts[i]! + this.referenceTime;
+      }
+    }
     return null;
   }
 

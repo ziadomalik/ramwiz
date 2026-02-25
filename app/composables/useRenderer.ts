@@ -46,6 +46,7 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
     progress: 0,
     currentLod: "",
     instancesDrawn: 0,
+    violationCount: 0,
   })
 
   onUnmounted(() => {
@@ -181,5 +182,32 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
     }
   });
 
-  return { stats, viewState, hoveredEvent, mouseX, mouseY }
+  // Jump the view to the next violated event after the current view center
+  // Zooms in so the violation is clearly visible
+  const goToNextViolation = () => {
+    if (!traceRenderer) return;
+    const viewCenter = viewState.start + viewState.duration / 2;
+    const relCenter = viewCenter - traceRenderer.referenceTime;
+    const absTime = traceRenderer.findNextViolation(relCenter);
+    if (absTime != null) jumpToTime(absTime);
+  };
+
+  // Jump the view to the previous violated event before the current view center
+  const goToPrevViolation = () => {
+    if (!traceRenderer) return;
+    const viewCenter = viewState.start + viewState.duration / 2;
+    const relCenter = viewCenter - traceRenderer.referenceTime;
+    const absTime = traceRenderer.findPrevViolation(relCenter);
+    if (absTime != null) jumpToTime(absTime);
+  };
+
+  // Center the view on an absolute time and zoom in enough to see individual events
+  const jumpToTime = (absTime: number) => {
+    // Zoom in to ~200 clk window so the event is clearly visible
+    const zoomDuration = Math.min(200, viewState.duration);
+    viewState.duration = zoomDuration;
+    viewState.start = absTime - zoomDuration / 2;
+  };
+
+  return { stats, viewState, hoveredEvent, mouseX, mouseY, goToNextViolation, goToPrevViolation }
 };

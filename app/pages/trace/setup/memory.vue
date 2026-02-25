@@ -61,7 +61,7 @@ const onContinue = async () => {
     }
 
     await sessionStore.setMemoryLayout(memoryLayout as MemoryLayout)
-    navigateTo('/trace/view');
+    navigateTo('/trace/setup/constraints');
 
   } catch (error) {
     console.log('Error saving memory layout:', error)

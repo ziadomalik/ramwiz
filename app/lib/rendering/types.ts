@@ -14,4 +14,5 @@ export interface Stats {
   progress: number;
   currentLod: string;
   instancesDrawn: number;
+  violationCount: number;
 }

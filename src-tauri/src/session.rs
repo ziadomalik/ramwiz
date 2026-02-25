@@ -33,9 +33,33 @@ pub struct MemoryLayout {
     pub num_banks: u8,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConstraintRule {
+    pub id: String,
+    pub scope: String,
+    pub preceding: Vec<u8>,
+    pub following: Vec<u8>,
+    #[serde(rename = "latencyCycles")]
+    pub latency_cycles: f32,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(rename = "siblingRank", default)]
+    pub sibling_rank: Option<bool>,
+    #[serde(default)]
+    pub window: Option<u8>,
+    #[serde(default)]
+    pub enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConstraintConfig {
+    pub rules: Vec<ConstraintRule>,
+}
+
 pub struct SessionState {
     pub loader: Mutex<Option<TraceLoader>>,
     pub config: Mutex<Option<CommandConfig>>,
+    pub constraints: Mutex<Option<ConstraintConfig>>,
     pub memory: Mutex<Option<MemoryLayout>>,
 }
 
@@ -44,6 +68,7 @@ impl SessionState {
         Self {
             loader: Mutex::new(None),
             config: Mutex::new(None),
+            constraints: Mutex::new(None),
             memory: Mutex::new(None),
         }
     }
@@ -73,6 +98,19 @@ pub fn load_memory_layout<R: Runtime>(app: &AppHandle<R>) -> Result<Option<Memor
 
     if let Some(val) = store.get("memoryLayout") {
         let config: MemoryLayout = serde_json::from_value(val).map_err(|e| e.to_string())?;
+        Ok(Some(config))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn load_constraint_config<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<Option<ConstraintConfig>, String> {
+    let store = app.store(STORE_PATH).map_err(|e| e.to_string())?;
+
+    if let Some(val) = store.get("constraintConfig") {
+        let config: ConstraintConfig = serde_json::from_value(val).map_err(|e| e.to_string())?;
         Ok(Some(config))
     } else {
         Ok(None)
@@ -114,6 +152,23 @@ pub fn set_memory_layout<R: Runtime>(
     Ok(())
 }
 
+pub fn set_constraint_config<R: Runtime>(
+    app: &AppHandle<R>,
+    session: &SessionState,
+    constraint_config: ConstraintConfig,
+) -> Result<(), String> {
+    let store = app.store(STORE_PATH).map_err(|e| e.to_string())?;
+    let constraint_config_value =
+        serde_json::to_value(constraint_config.clone()).map_err(|e| e.to_string())?;
+
+    store.set("constraintConfig", constraint_config_value);
+
+    let mut guard = session.constraints.lock().map_err(|e| e.to_string())?;
+    *guard = Some(constraint_config);
+
+    Ok(())
+}
+
 // --------------------- //
 // YAML Config Export     //
 // --------------------- //
@@ -122,6 +177,8 @@ pub fn set_memory_layout<R: Runtime>(
 pub struct FullConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command_config: Option<CommandConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub constraint_config: Option<ConstraintConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory_layout: Option<MemoryLayout>,
 }
@@ -147,8 +204,17 @@ pub fn export_config_yaml<R: Runtime>(
         }
     };
 
+    let constraints = {
+        let guard = session.constraints.lock().map_err(|e| e.to_string())?;
+        match guard.as_ref() {
+            Some(c) => Some(c.clone()),
+            None => load_constraint_config(app)?,
+        }
+    };
+
     let full = FullConfig {
         command_config: config,
+        constraint_config: constraints,
         memory_layout: layout,
     };
 
@@ -172,6 +238,10 @@ pub fn import_config_yaml<R: Runtime>(
 
     if let Some(config) = full.command_config {
         set_command_config(app, session, config)?;
+    }
+
+    if let Some(config) = full.constraint_config {
+        set_constraint_config(app, session, config)?;
     }
 
     if let Some(layout) = full.memory_layout {

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use tauri::ipc::Response;
 use tauri::{AppHandle, State};
 
-use crate::session::{CommandConfig, MemoryLayout, SessionState};
+use crate::session::{CommandConfig, ConstraintConfig, MemoryLayout, SessionState};
 
 #[tauri::command]
 fn load_trace(
@@ -75,6 +75,28 @@ fn set_memory_layout(
     layout: MemoryLayout,
 ) -> Result<(), String> {
     session::set_memory_layout(&app, &session, layout).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_constraint_config(
+    app: AppHandle,
+    session: State<'_, SessionState>,
+) -> Result<Option<ConstraintConfig>, String> {
+    let guard = session.constraints.lock().map_err(|e| e.to_string())?;
+    if let Some(config) = guard.as_ref() {
+        return Ok(Some(config.clone()));
+    }
+    drop(guard);
+    session::load_constraint_config(&app)
+}
+
+#[tauri::command]
+fn set_constraint_config(
+    app: AppHandle,
+    session: State<'_, SessionState>,
+    config: ConstraintConfig,
+) -> Result<(), String> {
+    session::set_constraint_config(&app, &session, config).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -162,6 +184,14 @@ fn close_session(session: State<'_, SessionState>) -> Result<(), String> {
         let mut guard = session.config.lock().map_err(|e| e.to_string())?;
         *guard = None;
     }
+    {
+        let mut guard = session.constraints.lock().map_err(|e| e.to_string())?;
+        *guard = None;
+    }
+    {
+        let mut guard = session.memory.lock().map_err(|e| e.to_string())?;
+        *guard = None;
+    }
     Ok(())
 }
 
@@ -192,6 +222,8 @@ pub fn run() {
             set_command_config,
             get_memory_layout,
             set_memory_layout,
+            get_constraint_config,
+            set_constraint_config,
             export_config_yaml,
             import_config_yaml,
         ])

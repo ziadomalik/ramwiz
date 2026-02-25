@@ -73,6 +73,24 @@ export interface CommandConfig {
   clockPeriods: Record<number, number | undefined>;
 }
 
+export type ConstraintScope = 'channel' | 'rank' | 'bankgroup' | 'bank';
+
+export interface ConstraintRule {
+  id: string;
+  scope: ConstraintScope;
+  preceding: number[];
+  following: number[];
+  latencyCycles: number;
+  description?: string;
+  siblingRank?: boolean;
+  window?: number;
+  enabled?: boolean;
+}
+
+export interface ConstraintConfig {
+  rules: ConstraintRule[];
+}
+
 // Get a number of trace entries starting at a specific index.
 // CLK values in the response are stored as f32 offsets from referenceTime
 // to preserve precision at large absolute timestamps.
@@ -95,11 +113,6 @@ async function getEntryIndexByTime(time: number): Promise<number> {
 // USER DATA //
 //-----------//
 
-export interface CommandConfig {
-  colors: Record<number, string>;
-  clockPeriods: Record<number, number | undefined>;
-}
-
 export interface MemoryLayout {
   numChannels: number;
   numBankgroups: number;
@@ -112,6 +125,14 @@ async function getCommandConfig(): Promise<CommandConfig | null> {
 
 async function setCommandConfig(config: CommandConfig): Promise<void> {
   return invoke<void>('set_command_config', { config });
+}
+
+async function getConstraintConfig(): Promise<ConstraintConfig | null> {
+  return invoke<ConstraintConfig | null>('get_constraint_config');
+}
+
+async function setConstraintConfig(config: ConstraintConfig): Promise<void> {
+  return invoke<void>('set_constraint_config', { config });
 }
 
 async function getMemoryLayout(): Promise<MemoryLayout | null> {
@@ -166,6 +187,8 @@ export default function useBackend() {
     store: {
       getCommandConfig,
       setCommandConfig,
+      getConstraintConfig,
+      setConstraintConfig,
       getMemoryLayout,
       setMemoryLayout,
       exportConfigYaml,

@@ -12,12 +12,14 @@ export const useSessionStore = defineStore('session', {
     dictionary: null as Dictionary | null,
     memoryLayout: null as MemoryLayout | null,
     commandConfig: null as CommandConfig | null,
+    constraintConfig: null as ConstraintConfig | null,
   }),
 
   getters: {
     hasHeader: (state): boolean => state.header !== null,
     hasDictionary: (state): boolean => state.dictionary !== null,
     hasCommandConfig: (state): boolean => state.commandConfig !== null,
+    hasConstraintConfig: (state): boolean => state.constraintConfig !== null,
     hasMemoryLayout: (state): boolean => state.memoryLayout !== null,
     isReady: (state): boolean => state.header !== null && state.dictionary !== null,
     
@@ -55,6 +57,12 @@ export const useSessionStore = defineStore('session', {
       await store.setCommandConfig(config);
     },
 
+    async setConstraintConfig(config: ConstraintConfig) {
+      const { store } = useBackend();
+      this.constraintConfig = config;
+      await store.setConstraintConfig(config);
+    },
+
     async loadSavedCommandConfig(): Promise<CommandConfig | null> {
       const { store } = useBackend();
       this.commandConfig = await store.getCommandConfig();
@@ -67,12 +75,19 @@ export const useSessionStore = defineStore('session', {
       return this.memoryLayout;
     },
 
+    async loadSavedConstraintConfig(): Promise<ConstraintConfig | null> {
+      const { store } = useBackend();
+      this.constraintConfig = await store.getConstraintConfig();
+      return this.constraintConfig;
+    },
+
     async importConfigFromYaml(): Promise<boolean> {
       const { store } = useBackend();
       const imported = await store.importConfigYaml();
       if (!imported) return false;
 
       await this.loadSavedCommandConfig();
+      await this.loadSavedConstraintConfig();
       await this.loadSavedMemoryLayout();
       return true;
     },
@@ -82,6 +97,9 @@ export const useSessionStore = defineStore('session', {
 
       this.header = null;
       this.dictionary = null;
+      this.commandConfig = null;
+      this.constraintConfig = null;
+      this.memoryLayout = null;
       await trace.closeSession();
     },
   },
