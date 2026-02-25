@@ -1,76 +1,75 @@
 <template>
-  <TraceSetupHeader to="/trace/setup/memory" title="Timing Constraints"
-    description="Define cycle-time constraints between commands" />
+  <div class="flex flex-col max-h-[85vh]">
+    <TraceSetupHeader to="/trace/setup/memory" title="Timing Constraints"
+      description="Define cycle-time constraints between commands" />
 
-  <div v-for="scope in SCOPES" :key="scope.value">
-    <div class="flex items-center justify-between pt-5 pb-2">
-      <span class="text-xs font-semibold text-neutral-400 uppercase tracking-wider">{{ scope.label }} scope</span>
-      <span class="text-xs text-neutral-500">{{ getRulesForScope(scope.value).length }} rules</span>
+    <!-- Scrollable rules area -->
+    <div class="flex-1 min-h-0 overflow-y-auto space-y-4 py-3 pr-1">
+      <div v-for="scope in SCOPES" :key="scope.value">
+        <div class="flex items-center justify-between pb-1.5">
+          <span class="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">{{ scope.label }} scope</span>
+          <span class="text-[10px] text-neutral-500">{{ getRulesForScope(scope.value).length }} rules</span>
+        </div>
+
+        <div class="space-y-1.5">
+          <UCard v-for="rule in getRulesForScope(scope.value)" :key="rule.id" :ui="{ body: 'p-2 sm:p-2' }">
+            <div class="space-y-2">
+              <div class="flex items-center gap-1.5">
+                <input type="checkbox" v-model="rule.enabled"
+                  class="rounded border-neutral-600 accent-primary-500 shrink-0 cursor-pointer size-3.5">
+                <input v-model="rule.description" placeholder="Description"
+                  class="flex-1 text-xs bg-transparent border-none outline-none text-neutral-200 placeholder-neutral-600 min-w-0" />
+                <UButton icon="i-lucide-x" color="neutral" variant="ghost" size="xs" @click="removeRule(rule.id)" />
+              </div>
+
+              <div class="flex items-end gap-2">
+                <div class="flex-1 min-w-0">
+                  <span class="text-[10px] text-neutral-500 uppercase mb-0.5 block">Preceding</span>
+                  <TraceSetupCommandPicker v-model="rule.preceding" :commands="commandOptions" label="Select…" />
+                </div>
+                <span class="text-neutral-600 pb-1.5 shrink-0">→</span>
+                <div class="flex-1 min-w-0">
+                  <span class="text-[10px] text-neutral-500 uppercase mb-0.5 block">Following</span>
+                  <TraceSetupCommandPicker v-model="rule.following" :commands="commandOptions" label="Select…" />
+                </div>
+                <div class="shrink-0">
+                  <span class="text-[10px] text-neutral-500 uppercase mb-0.5 block">Latency</span>
+                  <UInput v-model.number="rule.latencyCycles" type="number" placeholder="0" class="w-20" size="sm">
+                    <template #trailing>
+                      <span class="text-[10px] text-neutral-500 select-none">clk</span>
+                    </template>
+                  </UInput>
+                </div>
+              </div>
+
+              <div v-if="scope.value === 'rank'" class="flex items-end gap-3">
+                <div v-if="scope.value === 'rank' || rule.window != null">
+                  <span class="text-[10px] text-neutral-500 uppercase mb-0.5 block">Window</span>
+                  <UInput v-model.number="rule.window" type="number" placeholder="—" class="w-20" size="sm" />
+                </div>
+                <label class="flex items-center gap-1.5 pb-1.5 cursor-pointer select-none">
+                  <input type="checkbox" v-model="rule.siblingRank"
+                    class="rounded border-neutral-600 accent-primary-500 size-3.5">
+                  <span class="text-[10px] text-neutral-400">Sibling rank</span>
+                </label>
+              </div>
+            </div>
+          </UCard>
+
+          <UButton @click="addRule(scope.value)" icon="i-lucide-plus" variant="outline" color="neutral" size="xs"
+            class="w-full" block>
+            Add Rule
+          </UButton>
+        </div>
+      </div>
     </div>
 
-    <div class="space-y-2">
-      <UCard v-for="rule in getRulesForScope(scope.value)" :key="rule.id" :ui="{ body: 'p-3 sm:p-3' }">
-        <div class="space-y-3">
-          <!-- Row 1: enable + description + delete -->
-          <div class="flex items-center gap-2">
-            <input type="checkbox" v-model="rule.enabled"
-              class="rounded border-neutral-600 accent-primary-500 shrink-0 cursor-pointer">
-            <input v-model="rule.description" placeholder="Description"
-              class="flex-1 text-sm bg-transparent border-none outline-none text-neutral-200 placeholder-neutral-600 min-w-0" />
-            <UButton icon="i-lucide-x" color="neutral" variant="ghost" size="xs" @click="removeRule(rule.id)" />
-          </div>
-
-          <!-- Row 2: preceding → following -->
-          <div class="flex items-center gap-2">
-            <div class="flex-1 min-w-0">
-              <span class="text-[10px] text-neutral-500 uppercase mb-1 block">Preceding</span>
-              <TraceSetupCommandPicker v-model="rule.preceding" :commands="commandOptions" label="Select…" />
-            </div>
-            <span class="text-neutral-600 mt-4 shrink-0">→</span>
-            <div class="flex-1 min-w-0">
-              <span class="text-[10px] text-neutral-500 uppercase mb-1 block">Following</span>
-              <TraceSetupCommandPicker v-model="rule.following" :commands="commandOptions" label="Select…" />
-            </div>
-          </div>
-
-          <!-- Row 3: latency + optional fields -->
-          <div class="flex items-center gap-3 flex-wrap">
-            <div>
-              <span class="text-[10px] text-neutral-500 uppercase mb-1 block">Latency</span>
-              <UInput v-model.number="rule.latencyCycles" type="number" placeholder="0" class="w-24">
-                <template #trailing>
-                  <span class="text-xs text-neutral-500 select-none">clk</span>
-                </template>
-              </UInput>
-            </div>
-
-            <div v-if="scope.value === 'rank' || rule.window != null">
-              <span class="text-[10px] text-neutral-500 uppercase mb-1 block">Window</span>
-              <UInput v-model.number="rule.window" type="number" placeholder="—" class="w-20" />
-            </div>
-
-            <label v-if="scope.value === 'rank'"
-              class="flex items-center gap-1.5 mt-4 cursor-pointer select-none">
-              <input type="checkbox" v-model="rule.siblingRank"
-                class="rounded border-neutral-600 accent-primary-500">
-              <span class="text-xs text-neutral-400">Sibling rank</span>
-            </label>
-          </div>
-        </div>
-      </UCard>
-
-      <UButton @click="addRule(scope.value)" icon="i-lucide-plus" variant="outline" color="neutral" size="sm"
-        class="w-full" block>
-        Add Rule
+    <div class="sticky bottom-0 pt-3 pb-1">
+      <UButton size="lg" square @click="onContinue" :loading="loading"
+        class="w-full flex items-center justify-center" trailing-icon="i-lucide-arrow-right">
+        Continue
       </UButton>
     </div>
-  </div>
-
-  <div class="pt-6">
-    <UButton size="lg" square @click="onContinue" :loading="loading"
-      class="w-full flex items-center justify-center" trailing-icon="i-lucide-arrow-right">
-      Continue
-    </UButton>
   </div>
 </template>
 
@@ -152,4 +151,3 @@ const onContinue = async () => {
   }
 };
 </script>
-
