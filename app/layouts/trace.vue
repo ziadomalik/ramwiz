@@ -2,8 +2,7 @@
   <UDashboardGroup>
     <UDashboardSidebar :ui="{ body: 'p-0 gap-0' }">
       <div :style="{ height: PADDING_TOP }" class="sticky top-0 z-50">
-        <Toolbar />
-        <div class="border-b border-neutral-800 mt-px"></div>
+        <div class="border-b border-neutral-800"></div>
       </div>
       <div ref="treeContainer" class="h-full overflow-auto">
         <UTree v-model:expanded="expandedState" size="xl" :items="items" :ui="{ root: 'border-b border-neutral-800', link: 'rounded-none before:rounded-none', itemWithChildren: 'ps-0' }" >

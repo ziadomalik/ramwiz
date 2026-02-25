@@ -1,14 +1,11 @@
 <template>
   <div class="relative w-full h-screen flex flex-col overflow-hidden bg-neutral-900">
-    <InfoBar 
+    <InfoBar
       class="sticky top-0 z-10"
-      :fps="stats.fps" 
-      :event-count="stats.eventCount" 
+      :fps="stats.fps"
+      :event-count="stats.eventCount"
       :total-events="stats.totalEvents"
       :current-lod="stats.currentLod"
-      :violation-count="stats.violationCount"
-      @prev-violation="goToPrevViolation"
-      @next-violation="goToNextViolation"
     />
     <DevOnly>
       <DevInfoBar
@@ -51,17 +48,18 @@
       <span><span class="text-zinc-500">COL</span> {{ hoveredEvent.column }}</span>
     </div>
 
-    <!-- Violation details -->
     <template v-if="hoveredEvent.violation">
       <div class="border-t border-red-700/40 my-2" />
       <div class="flex items-center gap-1.5 mb-1">
-        <span class="text-red-400 text-xs font-semibold">⚠ Timing Violation</span>
+        <UIcon name="i-lucide-circle-alert" class="text-red-400" />
+        <span class="text-red-400 text-xs font-semibold">Timing Violation</span>
       </div>
       <ul class="text-[11px] text-red-300/80 space-y-0.5 pl-3.5 list-disc">
         <li v-for="reason in hoveredEvent.violationReasons" :key="reason">{{ reason }}</li>
       </ul>
     </template>
   </div>
+  <ViolationNavigator :violations="stats.violationCount" v-if="stats.violationCount > 0" @prev="goToPrevViolation" @next="goToNextViolation" />
 </template>
 
 <script setup lang="ts">
@@ -71,7 +69,6 @@ definePageMeta({
 
 const sessionStore = useSessionStore();
 
-const color = computed(() => sessionStore.getCommandColor(hoveredEvent.value?.cmdId ?? 0));
 const name = computed(() => sessionStore.getCommandName(hoveredEvent.value?.cmdId ?? 0));
 
 const canvas = ref<HTMLCanvasElement | null>(null);
