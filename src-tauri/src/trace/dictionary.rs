@@ -66,14 +66,10 @@ pub fn parse(
         return Err(DictionaryError::OffsetOutOfBounds);
     }
 
-    let mut commands = std::collections::HashMap::new();
+    let mut commands = std::collections::HashMap::with_capacity(num_commands as usize);
     let mut pos = offset;
 
     for cmd_id in 0..num_commands {
-        if pos >= data.len() {
-            return Err(DictionaryError::OffsetOutOfBounds);
-        }
-
         if pos >= data.len() {
             return Err(DictionaryError::OffsetOutOfBounds);
         }

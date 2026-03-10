@@ -8,9 +8,9 @@
 /// +----------------+
 /// |  Header (24B)  |
 /// +----------------+
-/// | Entry #1 (32B) |
+/// | Entry #1 (64B) |
 /// +----------------+
-/// | Entry #2 (32B) |
+/// | Entry #2 (64B) |
 /// +----------------+
 /// | ...            |
 /// +----------------+
@@ -68,11 +68,26 @@ impl TraceLoader {
     }
 
     pub fn load_entry_slice(&self, start: u64, count: usize) -> Result<&[Entry], std::io::Error> {
+        let total_entries = self.header.num_entries();
+        if start > total_entries {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "Out of bounds",
+            ));
+        }
+        let remaining = (total_entries - start) as usize;
+        if count > remaining {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "Out of bounds",
+            ));
+        }
+
         let start_offset =
             std::mem::size_of::<Header>() + (start as usize * std::mem::size_of::<Entry>());
         let end_offset = start_offset + (count * std::mem::size_of::<Entry>());
 
-        if end_offset > self.mmap.len() {
+        if end_offset > self.header.dict_offset() as usize {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::UnexpectedEof,
                 "Out of bounds",

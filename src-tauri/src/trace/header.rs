@@ -28,7 +28,7 @@ use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned};
 
 use crate::trace::serialize::{deserialize_leu64, serialize_leu64};
 
-const SUPPORTED_VERSION: u8 = 1;
+const SUPPORTED_VERSION: u8 = 2;
 const MAGIC: [u8; 5] = *b"RAM2\0";
 
 #[derive(
@@ -113,3 +113,5 @@ pub fn parse(mmap: &Mmap) -> Result<Header, HeaderError> {
 
     Ok(*header)
 }
+
+const _: [(); 24] = [(); std::mem::size_of::<Header>()];
