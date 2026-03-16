@@ -15,14 +15,17 @@ export class SwimlanesRenderer {
   }
 
   // Writes swimlane lookup data into the Float32Array cache.
-  // Maps each flat lane index (ch * maxBg * maxBank + bg * maxBank + bank) to a Y pixel center.
+  // Maps each flat lane index to a Y pixel center for:
+  // (channel -> bus -> rank -> bankgroup -> bank).
   //
-  // RowLayout entries are ordered parent-first (channel → bankgroup → bank) from the
-  // depth-first DOM walk in trace.vue. Each entry carries its channel/bankgroup/bank
+  // RowLayout entries are ordered parent-first from the depth-first DOM walk
+  // in trace.vue. Each entry carries channel/bus/rank/bankgroup/bank
   // identifiers. More specific rows naturally overwrite less specific ones:
-  //   1. A channel row sets ALL banks under that channel to the channel's Y.
-  //   2. A bankgroup row overwrites all banks under that bankgroup.
-  //   3. A bank row overwrites that specific bank.
+  //   1. A channel row sets all children under that channel.
+  //   2. A bus row overwrites all children under that bus.
+  //   3. A rank row overwrites all children under that rank.
+  //   4. A bankgroup row overwrites all banks under that bankgroup.
+  //   5. A bank row overwrites that specific bank.
   private buildSwimlaneLookup(): void {
     if (!this.canvas) return;
     const canvasRect = this.canvas.getBoundingClientRect();
@@ -30,26 +33,40 @@ export class SwimlanesRenderer {
     const memoryLayout = useSessionStore().memoryLayout;
     if (!memoryLayout) return;
 
-    const { numBankgroups, numBanks } = memoryLayout;
+    const { numRanks, numBankgroups, numBanks } = memoryLayout;
     const rowLayout = useUIStore().rowLayout;
+    const numBuses = 2;
+    const ranksPerBus = numRanks * numBankgroups * numBanks;
+    const banksPerRank = numBankgroups * numBanks;
 
     for (const row of rowLayout) {
       if (row.channel === undefined) continue;
       const yCenter = (row.top + row.height / 2) - canvasRect.top;
 
-      // Determine the range of bankgroups and banks this row covers.
-      // A channel-level row (bankgroup undefined) covers all bankgroups and banks.
-      // A bankgroup-level row (bank undefined) covers all banks within that bankgroup.
-      // A bank-level row covers exactly one flat index.
+      // Determine the hierarchy ranges this row covers.
+      // Omitted dimensions imply "all children".
+      const busStart = row.bus ?? 0;
+      const busEnd = row.bus ?? (numBuses - 1);
+      const rankStart = row.rank ?? 0;
+      const rankEnd = row.rank ?? (numRanks - 1);
       const bgStart = row.bankgroup ?? 0;
       const bgEnd = row.bankgroup ?? (numBankgroups - 1);
       const bStart = row.bank ?? 0;
       const bEnd = row.bank ?? (numBanks - 1);
 
-      for (let bg = bgStart; bg <= bgEnd; bg++) {
-        for (let b = bStart; b <= bEnd; b++) {
-          const flatIdx = row.channel * (numBankgroups * numBanks) + bg * numBanks + b;
-          this.swimlaneCache.data![flatIdx * 4] = yCenter;
+      for (let bus = busStart; bus <= busEnd; bus++) {
+        for (let rank = rankStart; rank <= rankEnd; rank++) {
+          for (let bg = bgStart; bg <= bgEnd; bg++) {
+            for (let b = bStart; b <= bEnd; b++) {
+              const flatIdx =
+                row.channel * (numBuses * ranksPerBus) +
+                bus * ranksPerBus +
+                rank * banksPerRank +
+                bg * numBanks +
+                b;
+              this.swimlaneCache.data![flatIdx * 4] = yCenter;
+            }
+          }
         }
       }
     }
@@ -64,7 +81,10 @@ export class SwimlanesRenderer {
 
     const canvasRect = this.canvas.getBoundingClientRect();
 
-    const totalLanes = Math.max(memoryLayout.numChannels * memoryLayout.numBankgroups * memoryLayout.numBanks, 1);
+    const totalLanes = Math.max(
+      memoryLayout.numChannels * 2 * memoryLayout.numRanks * memoryLayout.numBankgroups * memoryLayout.numBanks,
+      1
+    );
 
     const swimlaneDirty = (
       this.swimlaneCache.layoutVersion !== uiStore.layoutVersion ||

@@ -31,6 +31,7 @@ export interface CommandConfig {
 
 export interface MemoryLayout {
   numChannels: number;
+  numRanks: number;
   numBankgroups: number;
   numBanks: number;
 }

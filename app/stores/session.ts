@@ -46,6 +46,7 @@ export const useSessionStore = defineStore('session', {
       this.header = header;
       this.memoryLayout = {
         numChannels: header.num_channels,
+        numRanks: header.num_ranks,
         numBankgroups: header.num_bankgroups,
         numBanks: header.num_banks,
       };
@@ -105,7 +106,7 @@ export const useSessionStore = defineStore('session', {
       sortedIds.forEach((id, index) => {
         colors[id] = COLORS[index % COLORS.length] ?? '#CCCCCC';
         const latency = dictionary.latencies[id];
-        clockPeriods[id] = latency >= 0 ? latency : undefined;
+        clockPeriods[id] = latency !== undefined && latency >= 0 ? latency : undefined;
       });
 
       return { colors, clockPeriods };

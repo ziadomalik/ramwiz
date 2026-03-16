@@ -28,6 +28,10 @@ import type { TreeItem } from '@nuxt/ui'
 import type { RowLayout } from '~/stores/ui'
 
 const PADDING_TOP = '25px'
+const BUS_TIMELINES = [
+  { id: 0, key: 'cmd', name: 'Command Bus' },
+  { id: 1, key: 'data', name: 'Data Bus' },
+] as const;
 const uiStore = useUIStore()
 const sessionStore = useSessionStore()
 
@@ -57,21 +61,44 @@ const updateLayout = () => {
 
     if (!expandedSet.has(`ch${ch}`)) continue
 
-    for (let bg = 0; bg < ml.numBankgroups; bg++) {
-      const bgEl = buttons[domIdx] as HTMLElement | undefined
-      if (!bgEl) break
-      const bgRect = bgEl.getBoundingClientRect()
-      layout.push({ top: bgRect.top, height: bgRect.height, channel: ch, bankgroup: bg })
+    for (const bus of BUS_TIMELINES) {
+      const busEl = buttons[domIdx] as HTMLElement | undefined
+      if (!busEl) break
+      const busRect = busEl.getBoundingClientRect()
+      layout.push({ top: busRect.top, height: busRect.height, channel: ch, bus: bus.id })
       domIdx++
 
-      if (!expandedSet.has(`ch${ch}_bg${bg}`)) continue
+      const busId = getUniqueTreeItemId(ch, bus.key)
+      if (!expandedSet.has(busId)) continue
 
-      for (let b = 0; b < ml.numBanks; b++) {
-        const bankEl = buttons[domIdx] as HTMLElement | undefined
-        if (!bankEl) break
-        const bankRect = bankEl.getBoundingClientRect()
-        layout.push({ top: bankRect.top, height: bankRect.height, channel: ch, bankgroup: bg, bank: b })
+      for (let rank = 0; rank < ml.numRanks; rank++) {
+        const rankEl = buttons[domIdx] as HTMLElement | undefined
+        if (!rankEl) break
+        const rankRect = rankEl.getBoundingClientRect()
+        layout.push({ top: rankRect.top, height: rankRect.height, channel: ch, bus: bus.id, rank })
         domIdx++
+
+        const rankId = getUniqueTreeItemId(ch, bus.key, rank)
+        if (!expandedSet.has(rankId)) continue
+
+        for (let bg = 0; bg < ml.numBankgroups; bg++) {
+          const bgEl = buttons[domIdx] as HTMLElement | undefined
+          if (!bgEl) break
+          const bgRect = bgEl.getBoundingClientRect()
+          layout.push({ top: bgRect.top, height: bgRect.height, channel: ch, bus: bus.id, rank, bankgroup: bg })
+          domIdx++
+
+          const bgId = getUniqueTreeItemId(ch, bus.key, rank, bg)
+          if (!expandedSet.has(bgId)) continue
+
+          for (let b = 0; b < ml.numBanks; b++) {
+            const bankEl = buttons[domIdx] as HTMLElement | undefined
+            if (!bankEl) break
+            const bankRect = bankEl.getBoundingClientRect()
+            layout.push({ top: bankRect.top, height: bankRect.height, channel: ch, bus: bus.id, rank, bankgroup: bg, bank: b })
+            domIdx++
+          }
+        }
       }
     }
   }
@@ -123,8 +150,16 @@ onUnmounted(() => {
   window.removeEventListener('scroll', scheduleLayoutUpdate, true)
 })
 
-function getUniqueTreeItemId(chIdx: number, bgIdx?: number, bIdx?: number) {
-  let id = ['ch' + chIdx]
+function getUniqueTreeItemId(chIdx: number, busKey?: string, rankIdx?: number, bgIdx?: number, bIdx?: number) {
+  const id: string[] = ['ch' + chIdx]
+
+  if (busKey !== undefined) {
+    id.push(busKey)
+  }
+
+  if (rankIdx !== undefined) {
+    id.push('rk' + rankIdx)
+  }
 
   if (bgIdx !== undefined) {
     id.push('bg' + bgIdx)
@@ -143,7 +178,8 @@ function getUniqueTreeItemId(chIdx: number, bgIdx?: number, bIdx?: number) {
 const expandedState = computed({
   get: () => { 
     if (uiStore.expandedState.length === 0) {
-      return Array(sessionStore.memoryLayout?.numChannels).fill('').map((_, chIdx) => `ch${chIdx}`)
+      const channelCount = sessionStore.memoryLayout?.numChannels ?? 0;
+      return Array.from({ length: channelCount }, (_, chIdx) => `ch${chIdx}`)
     }
 
     return uiStore.expandedState
@@ -154,18 +190,29 @@ const expandedState = computed({
 // NOTE: apparently NuxtUI checks uniqueness by label, so if one clicks `Bankgroup 0`, all bankgroups within all channels will expand.
 // Therefore we will do a very stupid hack by treating `label` as an id and adding our own `name` field we use to display the label.
 // To me this is a better solution than to integrate another UI library or even implementing my own tree component. 
-const items = computed<TreeItem[]>(() => (
-  Array(sessionStore.memoryLayout?.numChannels).fill({}).map((_, chIdx) => ({
+const items = computed<TreeItem[]>(() => {
+  const ml = sessionStore.memoryLayout
+  if (!ml) return []
+
+  return Array.from({ length: ml.numChannels }, (_, chIdx) => ({
     name: `Channel ${chIdx}`,
     label: getUniqueTreeItemId(chIdx),
-    children: Array(sessionStore.memoryLayout?.numBankgroups).fill({}).map((_, bgIdx) => ({
-      name: `Bankgroup ${bgIdx}`,
-      label: getUniqueTreeItemId(chIdx, bgIdx), 
-      children: Array(sessionStore.memoryLayout?.numBanks).fill({}).map((_, bIdx) => ({
-        name: `Bank ${bIdx}`,
-        label: getUniqueTreeItemId(chIdx, bgIdx, bIdx),
+    children: BUS_TIMELINES.map((bus) => ({
+      name: bus.name,
+      label: getUniqueTreeItemId(chIdx, bus.key),
+      children: Array.from({ length: ml.numRanks }, (_, rankIdx) => ({
+        name: `Rank ${rankIdx}`,
+        label: getUniqueTreeItemId(chIdx, bus.key, rankIdx),
+        children: Array.from({ length: ml.numBankgroups }, (_, bgIdx) => ({
+          name: `Bankgroup ${bgIdx}`,
+          label: getUniqueTreeItemId(chIdx, bus.key, rankIdx, bgIdx),
+          children: Array.from({ length: ml.numBanks }, (_, bIdx) => ({
+            name: `Bank ${bIdx}`,
+            label: getUniqueTreeItemId(chIdx, bus.key, rankIdx, bgIdx, bIdx),
+          }))
+        }))
       }))
     }))
   }))
-))
+})
 </script>

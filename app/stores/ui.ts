@@ -4,6 +4,8 @@ export interface RowLayout {
   top: number;
   height: number;
   channel?: number;
+  bus?: number;
+  rank?: number;
   bankgroup?: number;
   bank?: number;
 }

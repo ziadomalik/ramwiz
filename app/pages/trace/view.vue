@@ -36,6 +36,7 @@
     <!-- Address -->
     <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs font-mono w-full">
       <span><span class="text-zinc-500">CH</span> {{ hoveredEvent.channel }}</span>
+      <span><span class="text-zinc-500">BUS</span> {{ busName }}</span>
       <span><span class="text-zinc-500">RA</span> {{ hoveredEvent.rank }}</span>
       <span><span class="text-zinc-500">BG</span> {{ hoveredEvent.bankgroup }}</span>
       <span><span class="text-zinc-500">BNK</span> {{ hoveredEvent.bank }}</span>
@@ -54,6 +55,7 @@ const sessionStore = useSessionStore();
 
 const color = computed(() => sessionStore.getCommandColor(hoveredEvent.value?.cmdId ?? 0));
 const name = computed(() => sessionStore.getCommandName(hoveredEvent.value?.cmdId ?? 0));
+const busName = computed(() => hoveredEvent.value?.bus === 1 ? 'Data' : 'Command');
 
 const canvas = ref<HTMLCanvasElement | null>(null);
 const tooltip = ref<HTMLDivElement | null>(null);
@@ -62,8 +64,12 @@ const { stats, viewState, hoveredEvent, mouseX, mouseY } = useRenderer(canvas);
 const tooltipStyle = computed(() => {
   const offset = 12;
   const padding = 8;
-  let left = mouseX.value + offset;
-  let top = mouseY.value + offset;
+  const isCommandBus = hoveredEvent.value?.bus === 0;
+
+  // Mirror popup placement for command-bus events so it is less likely
+  // to cover the paired data-bus event below.
+  let left = isCommandBus ? mouseX.value - offset : mouseX.value + offset;
+  let top = isCommandBus ? mouseY.value - offset : mouseY.value + offset;
 
   if (!import.meta.client) {
     return { left: `${left}px`, top: `${top}px` };
@@ -72,11 +78,21 @@ const tooltipStyle = computed(() => {
   const tooltipWidth = tooltip.value?.offsetWidth ?? 260;
   const tooltipHeight = tooltip.value?.offsetHeight ?? 120;
 
-  if (left + tooltipWidth > window.innerWidth - padding) {
+  if (!isCommandBus && left + tooltipWidth > window.innerWidth - padding) {
     left = mouseX.value - tooltipWidth - offset;
   }
-  if (top + tooltipHeight > window.innerHeight - padding) {
+  if (!isCommandBus && top + tooltipHeight > window.innerHeight - padding) {
     top = mouseY.value - tooltipHeight - offset;
+  }
+  if (isCommandBus && left - tooltipWidth < padding) {
+    left = mouseX.value + offset;
+  } else if (isCommandBus) {
+    left = left - tooltipWidth;
+  }
+  if (isCommandBus && top - tooltipHeight < padding) {
+    top = mouseY.value + offset;
+  } else if (isCommandBus) {
+    top = top - tooltipHeight;
   }
 
   left = Math.max(padding, left);
