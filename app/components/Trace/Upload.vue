@@ -46,7 +46,9 @@ const continueToSetup = async () => {
     }
 
     sessionStore.setHeader(header);
-    navigateTo('/trace/setup/commands');
+    const dictionary = await trace.getDictionary();
+    await sessionStore.setDictionary(dictionary);
+    navigateTo('/trace/view');
   } finally {
     loading.value = false;
   }

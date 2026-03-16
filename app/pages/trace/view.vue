@@ -7,11 +7,6 @@
       :total-events="stats.totalEvents"
       :current-lod="stats.currentLod"
     />
-    <DevOnly>
-      <DevInfoBar
-        :hovered-event="hoveredEvent"
-      />
-    </DevOnly>
     <TraceViewTimeline 
       class="sticky top-0 z-10" 
       :view-state="viewState"

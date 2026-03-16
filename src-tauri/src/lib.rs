@@ -2,14 +2,14 @@ mod session;
 mod trace;
 
 use std::path::PathBuf;
+use std::{collections::HashMap};
 use tauri::ipc::Response;
 use tauri::{AppHandle, State};
 
-use crate::session::{CommandConfig, MemoryLayout, SessionState};
+use crate::session::SessionState;
 
 #[tauri::command]
 fn load_trace(
-    app: AppHandle,
     path: String,
     session: State<'_, SessionState>,
 ) -> Result<trace::header::Header, String> {
@@ -21,60 +21,36 @@ fn load_trace(
         *guard = Some(loader);
     }
 
-    let config = session::load_command_config(&app)?;
-    {
-        let mut guard = session.config.lock().map_err(|e| e.to_string())?;
-        *guard = config;
-    }
-
     Ok(header)
 }
 
 #[tauri::command]
-fn get_command_config(
+fn get_command_colors(
     app: AppHandle,
     session: State<'_, SessionState>,
-) -> Result<Option<CommandConfig>, String> {
-    let guard = session.config.lock().map_err(|e| e.to_string())?;
+) -> Result<Option<HashMap<u8, String>>, String> {
+    let guard = session.colors.lock().map_err(|e| e.to_string())?;
 
     if let Some(config) = guard.as_ref() {
-        return Ok(Some(config.clone()));
+        return Ok(Some(config.colors.clone()));
     }
 
     drop(guard);
 
-    session::load_command_config(&app)
+    Ok(session::load_command_colors(&app)?.map(|cfg| cfg.colors))
 }
 
 #[tauri::command]
-fn set_command_config(
+fn set_command_colors(
     app: AppHandle,
     session: State<'_, SessionState>,
-    config: CommandConfig,
+    colors: HashMap<u8, String>,
 ) -> Result<(), String> {
-    session::set_command_config(&app, &session, config).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn get_memory_layout(
-    app: AppHandle,
-    session: State<'_, SessionState>,
-) -> Result<Option<MemoryLayout>, String> {
-    let guard = session.memory.lock().map_err(|e| e.to_string())?;
-    if let Some(layout) = guard.as_ref() {
-        return Ok(Some(layout.clone()));
-    }
-    drop(guard);
-    session::load_memory_layout(&app)
-}
-
-#[tauri::command]
-fn set_memory_layout(
-    app: AppHandle,
-    session: State<'_, SessionState>,
-    layout: MemoryLayout,
-) -> Result<(), String> {
-    session::set_memory_layout(&app, &session, layout).map_err(|e| e.to_string())
+    session::set_command_colors(
+        &app,
+        &session,
+        session::CommandColorConfig { colors },
+    )
 }
 
 #[tauri::command]
@@ -135,31 +111,13 @@ fn get_trace_view(
 }
 
 #[tauri::command]
-fn export_config_yaml(
-    app: AppHandle,
-    session: State<'_, SessionState>,
-    path: String,
-) -> Result<(), String> {
-    session::export_config_yaml(&app, &session, path)
-}
-
-#[tauri::command]
-fn import_config_yaml(
-    app: AppHandle,
-    session: State<'_, SessionState>,
-    path: String,
-) -> Result<(), String> {
-    session::import_config_yaml(&app, &session, path)
-}
-
-#[tauri::command]
 fn close_session(session: State<'_, SessionState>) -> Result<(), String> {
     {
         let mut guard = session.loader.lock().map_err(|e| e.to_string())?;
         *guard = None;
     }
     {
-        let mut guard = session.config.lock().map_err(|e| e.to_string())?;
+        let mut guard = session.colors.lock().map_err(|e| e.to_string())?;
         *guard = None;
     }
     Ok(())
@@ -188,12 +146,8 @@ pub fn run() {
             get_trace_view,
             get_first_event_time,
             get_entry_index_by_time,
-            get_command_config,
-            set_command_config,
-            get_memory_layout,
-            set_memory_layout,
-            export_config_yaml,
-            import_config_yaml,
+            get_command_colors,
+            set_command_colors,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

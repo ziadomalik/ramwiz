@@ -287,7 +287,7 @@ export class TraceRenderer {
           cpuColumns: new Int32Array(lodCount),
         });
       }
-      this.lookupTexture = await this.createLookupTexture();
+      this.refreshLookupTexture();
 
       // Fetch the first event's absolute clock at f64 precision.
       // All GPU buffer values will be stored as (clk - referenceTime) in f32,
@@ -417,10 +417,12 @@ export class TraceRenderer {
     }
   }
 
-  private async createLookupTexture() {
-    const { store } = useBackend();
+  refreshLookupTexture() {
+    this.lookupTexture = this.createLookupTexture();
+  }
 
-    const config = await store.getCommandConfig();
+  private createLookupTexture() {
+    const config = useSessionStore().commandConfig;
     if (!config) return this.regl.texture({ width: 1, height: 1 });
 
     const MAX_COMMANDS = 256;
@@ -435,6 +437,7 @@ export class TraceRenderer {
       data[i * 4 + 2] = 0.5; // B
       data[i * 4 + 3] = 10.0; // Duration
     }
+    this.cmdDurations.fill(10.0);
 
     const hex2rgb = (hex: string) => {
       hex = hex.replace('#', '');

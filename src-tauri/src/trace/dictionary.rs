@@ -4,13 +4,13 @@
 /// The 'command id' referenced everywhere else refers to the index of the command in the dictionary.
 ///
 ///  Layout:
-/// +-------------+---------------+
-/// | Length (1B) | String Bytes  | <- Has command id 0
-/// +-------------+---------------+
-/// | Length (1B) | String Bytes  | <- Has command id 1
-/// +-------------+---------------+
+/// +-------------+---------------+-------------+
+/// | Length (1B) | String Bytes  | Latency (4B)| <- Has command id 0
+/// +-------------+---------------+-------------+
+/// | Length (1B) | String Bytes  | Latency (4B)| <- Has command id 1
+/// +-------------+---------------+-------------+
 /// | ...         | ...           | <- Has command id 2, 3, ...
-/// +-------------+---------------+
+/// +-------------+---------------+-------------+
 ///  
 /// ----
 /// Author: Ziad Malik
@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Dictionary {
     pub commands: std::collections::HashMap<u8, String>,
+    pub latencies: std::collections::HashMap<u8, i32>,
 }
 
 #[derive(Debug)]
@@ -67,6 +68,7 @@ pub fn parse(
     }
 
     let mut commands = std::collections::HashMap::with_capacity(num_commands as usize);
+    let mut latencies = std::collections::HashMap::with_capacity(num_commands as usize);
     let mut pos = offset;
 
     for cmd_id in 0..num_commands {
@@ -86,8 +88,21 @@ pub fn parse(
             .to_string();
         pos += str_len;
 
+        if pos + std::mem::size_of::<i32>() > data.len() {
+            return Err(DictionaryError::OffsetOutOfBounds);
+        }
+
+        let mut latency_bytes = [0u8; std::mem::size_of::<i32>()];
+        latency_bytes.copy_from_slice(&data[pos..pos + std::mem::size_of::<i32>()]);
+        let latency = i32::from_le_bytes(latency_bytes);
+        pos += std::mem::size_of::<i32>();
+
         commands.insert(cmd_id, name);
+        latencies.insert(cmd_id, latency);
     }
 
-    Ok(Dictionary { commands })
+    Ok(Dictionary {
+        commands,
+        latencies,
+    })
 }

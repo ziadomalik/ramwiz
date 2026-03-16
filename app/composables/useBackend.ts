@@ -1,36 +1,9 @@
 import type { FileInfo } from '@tauri-apps/plugin-fs';
 import { stat } from '@tauri-apps/plugin-fs';
-import { open, save } from '@tauri-apps/plugin-dialog';
+import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 
-//-------------//
-// FILE DIALOG //
-//-------------//
-
 export type FileMetadata = FileInfo & { name: string, path: string };
-
-export async function openFileDialog(): Promise<FileMetadata | null> {
-  const filePath = await open({
-    filters: [
-      { name: 'Ramulator Trace Files', extensions: ['mtrc'] },
-    ],
-    multiple: false,
-    directory: false,
-  });
-
-  if (!filePath) {
-    return null;
-  }
-
-  const path = filePath;
-  const name = filePath.replace(/\\/g, '/').split('/').pop() ?? '';
-
-  return { ...(await stat(filePath)), name, path };
-}
-
-// --------------------------- //
-// Header & Dictionary Loading //
-// --------------------------- //
 
 export interface Header {
   magic: number[];
@@ -38,62 +11,18 @@ export interface Header {
   num_commands: number;
   num_entries: number;
   dict_offset: number;
+  ncl: number;
+  ncwl: number;
+  num_channels: number;
+  num_ranks: number;
+  num_bankgroups: number;
+  num_banks: number;
 }
 
 export interface Dictionary {
   commands: Record<number, string>;
+  latencies: Record<number, number>;
 }
-
-// Loads a trace file, creating a session and returns the parsed header. 
-async function startSession(path: string): Promise<Header> {
-  return invoke<Header>('load_trace', { path });
-}
-
-// Gets the trace file header if a trace is currently loaded.
-async function getHeader(): Promise<Header | null> {
-  return invoke<Header | null>('get_session_info');
-}
-
-// Gets the dictionary from the currently loaded trace in the backend session.
-async function getDictionary(): Promise<Dictionary> {
-  return invoke<Dictionary>('load_dictionary');
-}
-
-// Closes the current session and frees the memory-mapped file.
-async function closeSession(): Promise<void> {
-  return invoke<void>('close_session');
-}
-
-//------------//
-// TRACE VIEW //
-//------------//
-
-export interface CommandConfig {
-  colors: Record<number, string>;
-  clockPeriods: Record<number, number | undefined>;
-}
-
-// Get a number of trace entries starting at a specific index.
-// CLK values in the response are stored as f32 offsets from referenceTime
-// to preserve precision at large absolute timestamps.
-async function getEntries(start: number, count: number, referenceTime: number): Promise<Uint8Array> {
-  return invoke<Uint8Array>('get_trace_view', { start, count, referenceTime: Math.floor(referenceTime) });
-}
-
-// Get the absolute clock value of the first event in the trace (as f64).
-// Used as the reference time for relative coordinate encoding.
-async function getFirstEventTime(): Promise<number> {
-  return invoke<number>('get_first_event_time');
-}
-
-/// Given a CLK, get the index of the entry at that specific CLK
-async function getEntryIndexByTime(time: number): Promise<number> {
-  return invoke<number>('get_entry_index_by_time', { time: Math.floor(time) });
-}
-
-//-----------//
-// USER DATA //
-//-----------//
 
 export interface CommandConfig {
   colors: Record<number, string>;
@@ -106,49 +35,56 @@ export interface MemoryLayout {
   numBanks: number;
 }
 
-async function getCommandConfig(): Promise<CommandConfig | null> {
-  return invoke<CommandConfig | null>('get_command_config');
-}
-
-async function setCommandConfig(config: CommandConfig): Promise<void> {
-  return invoke<void>('set_command_config', { config });
-}
-
-async function getMemoryLayout(): Promise<MemoryLayout | null> {
-  return invoke<MemoryLayout | null>('get_memory_layout');
-}
-
-async function setMemoryLayout(layout: MemoryLayout): Promise<void> {
-  return invoke<void>('set_memory_layout', { layout });
-}
-
-// ------------------- //
-// YAML Config Export   //
-// ------------------- //
-
-export async function exportConfigYaml(): Promise<boolean> {
-  const savePath = await save({
-    filters: [{ name: 'YAML Files', extensions: ['yaml', 'yml'] }],
-    defaultPath: 'ramwiz-config.yaml',
-  });
-
-  if (!savePath) return false;
-
-  await invoke<void>('export_config_yaml', { path: savePath });
-  return true;
-}
-
-export async function importConfigYaml(): Promise<boolean> {
+export async function openFileDialog(): Promise<FileMetadata | null> {
   const filePath = await open({
-    filters: [{ name: 'YAML Files', extensions: ['yaml', 'yml'] }],
+    filters: [{ name: 'Ramulator Trace Files', extensions: ['mtrc'] }],
     multiple: false,
     directory: false,
   });
 
-  if (!filePath) return false;
+  if (!filePath) {
+    return null;
+  }
 
-  await invoke<void>('import_config_yaml', { path: filePath });
-  return true;
+  const path = filePath;
+  const name = filePath.replace(/\\/g, '/').split('/').pop() ?? '';
+  return { ...(await stat(filePath)), name, path };
+}
+
+async function startSession(path: string): Promise<Header> {
+  return invoke<Header>('load_trace', { path });
+}
+
+async function getHeader(): Promise<Header | null> {
+  return invoke<Header | null>('get_session_info');
+}
+
+async function getDictionary(): Promise<Dictionary> {
+  return invoke<Dictionary>('load_dictionary');
+}
+
+async function closeSession(): Promise<void> {
+  return invoke<void>('close_session');
+}
+
+async function getEntries(start: number, count: number, referenceTime: number): Promise<Uint8Array> {
+  return invoke<Uint8Array>('get_trace_view', { start, count, referenceTime: Math.floor(referenceTime) });
+}
+
+async function getFirstEventTime(): Promise<number> {
+  return invoke<number>('get_first_event_time');
+}
+
+async function getEntryIndexByTime(time: number): Promise<number> {
+  return invoke<number>('get_entry_index_by_time', { time: Math.floor(time) });
+}
+
+async function getCommandColors(): Promise<Record<number, string> | null> {
+  return invoke<Record<number, string> | null>('get_command_colors');
+}
+
+async function setCommandColors(colors: Record<number, string>): Promise<void> {
+  return invoke<void>('set_command_colors', { colors });
 }
 
 export default function useBackend() {
@@ -161,15 +97,9 @@ export default function useBackend() {
       getDictionary,
       getEntries,
       getFirstEventTime,
-      getEntryIndexByTime
+      getEntryIndexByTime,
+      getCommandColors,
+      setCommandColors,
     },
-    store: {
-      getCommandConfig,
-      setCommandConfig,
-      getMemoryLayout,
-      setMemoryLayout,
-      exportConfigYaml,
-      importConfigYaml,
-    },
-  } 
+  };
 }

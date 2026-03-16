@@ -14,6 +14,7 @@ import type { ViewState, Stats } from '@/lib/rendering/types';
 
 export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
   const HOVER_MIN_PIXELS_PER_CLK = 0.5;
+  const sessionStore = useSessionStore();
 
   let traceRenderer: TraceRenderer | null = null;
   const hoveredEvent: Ref<HitResult | null> = ref(null);
@@ -47,6 +48,14 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
     currentLod: "",
     instancesDrawn: 0,
   })
+
+  watch(
+    () => sessionStore.commandConfig?.colors,
+    () => {
+      traceRenderer?.refreshLookupTexture();
+    },
+    { deep: true },
+  );
 
   onUnmounted(() => {
     if (abortController) {

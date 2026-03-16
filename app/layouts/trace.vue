@@ -33,8 +33,6 @@ const sessionStore = useSessionStore()
 
 const treeContainer = ref<HTMLElement | null>(null)
 
-await useAsyncData('memoryLayoutTrace', async () => sessionStore.loadSavedMemoryLayout())
-
 // The DOM buttons appear in the same order as a depth-first tree traversal
 // respecting the current expand/collapse state, so we walk the tree structure
 // in lockstep with the DOM node list.

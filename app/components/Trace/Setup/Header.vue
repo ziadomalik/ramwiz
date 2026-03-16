@@ -15,15 +15,6 @@
           class="rounded-full"  
           icon="i-lucide-arrow-left"
         />
-        <UButton 
-          class="cursor-pointer rounded-full" 
-          label="Import Config"
-          icon="i-lucide-upload" 
-          color="secondary"
-          variant="subtle"
-          size="xs" 
-          @click="handleImport"
-        />
       </div>
     </template>
   </UPageHeader>
@@ -31,18 +22,4 @@
 
 <script setup lang="ts">
 defineProps<{ title: string; description: string; to: string; }>();
-
-const sessionStore = useSessionStore();
-
-async function handleImport() {
-  try {
-    const imported = await sessionStore.importConfigFromYaml();
-    if (imported) {
-      // Re-trigger useAsyncData on the current setup page so local reactives update
-      await refreshNuxtData();
-    }
-  } catch (e) {
-    console.error('Failed to import config:', e);
-  }
-}
 </script>

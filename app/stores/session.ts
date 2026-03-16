@@ -6,6 +6,13 @@
 
 import { defineStore } from 'pinia';
 
+const COLORS = [
+  '#FFCAB1', '#A8D8EA', '#B5EAD7', '#E2B6CF',
+  '#C7CEEA', '#FFEAA7', '#DCD6F7', '#F8B595',
+  '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
+  '#F1948A', '#82E0AA', '#F5CBA7', '#AED6F1',
+];
+
 export const useSessionStore = defineStore('session', {
   state: () => ({
     header: null as Header | null,
@@ -37,44 +44,44 @@ export const useSessionStore = defineStore('session', {
   actions: {
     setHeader(header: Header) {
       this.header = header;
+      this.memoryLayout = {
+        numChannels: header.num_channels,
+        numBankgroups: header.num_bankgroups,
+        numBanks: header.num_banks,
+      };
     },
 
-    setDictionary(dictionary: Dictionary) {
+    async setDictionary(dictionary: Dictionary) {
       this.dictionary = dictionary;
+      this.commandConfig = this.createCommandConfigFromDictionary(dictionary);
+      await this.loadSavedCommandColors();
     },
 
-    async setMemoryLayout(memoryLayout: MemoryLayout) {
-      const { store } = useBackend();
-      this.memoryLayout = memoryLayout; 
-      await store.setMemoryLayout(memoryLayout);
+    async loadSavedCommandColors() {
+      if (!this.commandConfig) return;
+
+      const { trace } = useBackend();
+      const savedColors = await trace.getCommandColors();
+      if (!savedColors) return;
+
+      for (const [id, color] of Object.entries(savedColors)) {
+        const key = Number(id);
+        if (this.commandConfig.colors[key] !== undefined) {
+          this.commandConfig.colors[key] = color;
+        }
+      }
     },
 
-    async setCommandConfig(config: CommandConfig) {
-      const { store } = useBackend();
-      this.commandConfig = config;
-      await store.setCommandConfig(config);
+    async persistCommandColors() {
+      if (!this.commandConfig) return;
+      const { trace } = useBackend();
+      await trace.setCommandColors(this.commandConfig.colors);
     },
 
-    async loadSavedCommandConfig(): Promise<CommandConfig | null> {
-      const { store } = useBackend();
-      this.commandConfig = await store.getCommandConfig();
-      return this.commandConfig;
-    },
-
-    async loadSavedMemoryLayout(): Promise<MemoryLayout | null> {
-      const { store } = useBackend();
-      this.memoryLayout = await store.getMemoryLayout();
-      return this.memoryLayout;
-    },
-
-    async importConfigFromYaml(): Promise<boolean> {
-      const { store } = useBackend();
-      const imported = await store.importConfigYaml();
-      if (!imported) return false;
-
-      await this.loadSavedCommandConfig();
-      await this.loadSavedMemoryLayout();
-      return true;
+    async setCommandColor(commandId: number, color: string) {
+      if (!this.commandConfig) return;
+      this.commandConfig.colors[commandId] = color;
+      await this.persistCommandColors();
     },
 
     async close() {
@@ -82,7 +89,26 @@ export const useSessionStore = defineStore('session', {
 
       this.header = null;
       this.dictionary = null;
+      this.memoryLayout = null;
+      this.commandConfig = null;
       await trace.closeSession();
+    },
+
+    createCommandConfigFromDictionary(dictionary: Dictionary): CommandConfig {
+      const colors: Record<number, string> = {};
+      const clockPeriods: Record<number, number | undefined> = {};
+
+      const sortedIds = Object.keys(dictionary.commands)
+        .map(Number)
+        .sort((a, b) => a - b);
+
+      sortedIds.forEach((id, index) => {
+        colors[id] = COLORS[index % COLORS.length] ?? '#CCCCCC';
+        const latency = dictionary.latencies[id];
+        clockPeriods[id] = latency >= 0 ? latency : undefined;
+      });
+
+      return { colors, clockPeriods };
     },
   },
 });

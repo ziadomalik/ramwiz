@@ -1,7 +1,7 @@
 /// The file format implements utilities for parsing and managing the header of a memory trace file.
 ///
 ///  Layout:
-///  The header has a fixed width of 24 bytes.
+///  The header has a fixed width of 40 bytes.
 ///  
 ///  +--------------+------+-------------------------------------+
 ///  |     Name     | Size |             Description             |
@@ -12,6 +12,12 @@
 ///  | reserved     | 1B   | Padding to align next field to 8B   |
 ///  | num_entries  | 8B   | Number of entries / trace events    |
 ///  | dict_offset  | 8B   | Byte offset where dictionary starts |
+///  | ncl          | 4B   | nCL in cycles (RD cmd->data delay)  |
+///  | ncwl         | 4B   | nCWL in cycles (WR cmd->data delay) |
+///  | num_channels | 2B   | Number of channels                  |
+///  | num_ranks    | 2B   | Number of ranks                     |
+///  | num_bankgroups | 2B | Number of bankgroups per channel    |
+///  | num_banks    | 2B   | Number of banks per bankgroup       |
 ///  +--------------+------+-------------------------------------+
 ///  
 /// ----
@@ -23,12 +29,17 @@ use std::fmt;
 
 use memmap2::Mmap;
 use serde::{Deserialize, Serialize};
+use zerocopy::byteorder::little_endian::I16 as LeI16;
+use zerocopy::byteorder::little_endian::I32 as LeI32;
 use zerocopy::byteorder::little_endian::U64 as LeU64;
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned};
 
-use crate::trace::serialize::{deserialize_leu64, serialize_leu64};
+use crate::trace::serialize::{
+    deserialize_lei16, deserialize_lei32, deserialize_leu64, serialize_lei16, serialize_lei32,
+    serialize_leu64,
+};
 
-const SUPPORTED_VERSION: u8 = 2;
+const SUPPORTED_VERSION: u8 = 3;
 const MAGIC: [u8; 5] = *b"RAM2\0";
 
 #[derive(
@@ -50,6 +61,36 @@ pub struct Header {
         deserialize_with = "deserialize_leu64"
     )]
     pub dict_offset: LeU64,
+    #[serde(
+        serialize_with = "serialize_lei32",
+        deserialize_with = "deserialize_lei32"
+    )]
+    pub ncl: LeI32,
+    #[serde(
+        serialize_with = "serialize_lei32",
+        deserialize_with = "deserialize_lei32"
+    )]
+    pub ncwl: LeI32,
+    #[serde(
+        serialize_with = "serialize_lei16",
+        deserialize_with = "deserialize_lei16"
+    )]
+    pub num_channels: LeI16,
+    #[serde(
+        serialize_with = "serialize_lei16",
+        deserialize_with = "deserialize_lei16"
+    )]
+    pub num_ranks: LeI16,
+    #[serde(
+        serialize_with = "serialize_lei16",
+        deserialize_with = "deserialize_lei16"
+    )]
+    pub num_bankgroups: LeI16,
+    #[serde(
+        serialize_with = "serialize_lei16",
+        deserialize_with = "deserialize_lei16"
+    )]
+    pub num_banks: LeI16,
 }
 
 impl Header {
@@ -114,4 +155,4 @@ pub fn parse(mmap: &Mmap) -> Result<Header, HeaderError> {
     Ok(*header)
 }
 
-const _: [(); 24] = [(); std::mem::size_of::<Header>()];
+const _: [(); 40] = [(); std::mem::size_of::<Header>()];
