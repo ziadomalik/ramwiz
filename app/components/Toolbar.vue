@@ -46,6 +46,26 @@
         </div>
       </template>
     </UPopover>
+    <UPopover>
+      <UButton
+        class="rounded-none cursor-pointer"
+        label="Debug"
+        icon="i-lucide-bug"
+        size="xs"
+      />
+      <template #content>
+        <div class="w-[36rem] max-h-96 overflow-auto p-3 space-y-3 bg-neutral-900">
+          <div>
+            <p class="text-xs text-neutral-400 mb-1">Header</p>
+            <pre class="text-xs text-neutral-200 bg-neutral-950 border border-neutral-800 rounded p-2 overflow-auto">{{ headerDump }}</pre>
+          </div>
+          <div>
+            <p class="text-xs text-neutral-400 mb-1">Dictionary</p>
+            <pre class="text-xs text-neutral-200 bg-neutral-950 border border-neutral-800 rounded p-2 overflow-auto">{{ dictionaryDump }}</pre>
+          </div>
+        </div>
+      </template>
+    </UPopover>
   </div>
 </template>
 
@@ -57,6 +77,8 @@ const commands = computed<[string, string][]>(() =>
 );
 
 const hasCommands = computed(() => commands.value.length > 0);
+const headerDump = computed(() => JSON.stringify(sessionStore.header, null, 2) ?? 'null');
+const dictionaryDump = computed(() => JSON.stringify(sessionStore.dictionary, null, 2) ?? 'null');
 
 function getColor(id: number): string {
   return sessionStore.getCommandColor(id) ?? '#CCCCCC';

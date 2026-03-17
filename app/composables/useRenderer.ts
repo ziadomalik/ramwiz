@@ -28,7 +28,6 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
   let viewHelpers: ViewHelpers | null = null;
   let handleHover: ((e: MouseEvent) => void) | null = null;
   let handleMouseLeave: (() => void) | null = null;
-  let handleClick: ((e: MouseEvent) => void) | null = null;
 
   const viewState: ViewState = reactive({
     start: 0,
@@ -70,7 +69,6 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
       }
       if (handleHover) canvas.value.removeEventListener('mousemove', handleHover);
       if (handleMouseLeave) canvas.value.removeEventListener('mouseleave', handleMouseLeave);
-      if (handleClick) canvas.value.removeEventListener('click', handleClick);
     }
 
     if (viewHelpers) {
@@ -142,6 +140,11 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
         }
 
         traceRenderer?.update(stats, viewState);
+        if (hoveredEvent.value) {
+          traceRenderer?.triggerLinkedGlow(hoveredEvent.value);
+        } else {
+          traceRenderer?.clearLinkedGlow();
+        }
 
         updateFPS();
       });
@@ -179,23 +182,11 @@ export function useRenderer(canvas: Ref<HTMLCanvasElement | null>) {
 
       handleMouseLeave = () => {
         hoveredEvent.value = null;
-      };
-
-      handleClick = (e: MouseEvent) => {
-        if (!traceRenderer || !canvas.value) return;
-
-        const rect = canvas.value.getBoundingClientRect();
-        const localX = e.clientX - rect.left;
-        const localY = e.clientY - rect.top;
-        const hit = traceRenderer.hitTest(localX, localY, viewState);
-        if (!hit) return;
-
-        traceRenderer.triggerLinkedGlow(hit);
+        traceRenderer?.clearLinkedGlow();
       };
 
       canvas.value.addEventListener('mousemove', handleHover);
       canvas.value.addEventListener('mouseleave', handleMouseLeave);
-      canvas.value.addEventListener('click', handleClick);
 
       viewHelpers.resize();
       startStream();

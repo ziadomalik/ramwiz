@@ -13,20 +13,22 @@ export interface Header {
   dict_offset: number;
   ncl: number;
   ncwl: number;
-  num_channels: number;
-  num_ranks: number;
-  num_bankgroups: number;
-  num_banks: number;
+  max_channel_id: number;
+  max_rank_id: number;
+  max_bankgroup_id: number;
+  max_bank_id: number;
 }
 
 export interface Dictionary {
   commands: Record<number, string>;
-  latencies: Record<number, number>;
+  command_bus_latencies: Record<number, number>;
+  data_bus_latencies: Record<number, number>;
 }
 
 export interface CommandConfig {
   colors: Record<number, string>;
-  clockPeriods: Record<number, number | undefined>;
+  commandBusLatencies: Record<number, number | undefined>;
+  dataBusLatencies: Record<number, number | undefined>;
 }
 
 export interface MemoryLayout {

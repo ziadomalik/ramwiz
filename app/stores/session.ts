@@ -36,19 +36,24 @@ export const useSessionStore = defineStore('session', {
       return state.commandConfig?.colors[commandId];
     },
 
-    getCommandClockPeriod: (state) => (commandId: number): number | undefined => {
-      return state.commandConfig?.clockPeriods[commandId];
+    getCommandBusLatency: (state) => (commandId: number): number | undefined => {
+      return state.commandConfig?.commandBusLatencies[commandId];
+    },
+
+    getDataBusLatency: (state) => (commandId: number): number | undefined => {
+      return state.commandConfig?.dataBusLatencies[commandId];
     },
   },
 
   actions: {
     setHeader(header: Header) {
+      const toCount = (maxId: number) => Math.max(0, maxId + 1);
       this.header = header;
       this.memoryLayout = {
-        numChannels: header.num_channels,
-        numRanks: header.num_ranks,
-        numBankgroups: header.num_bankgroups,
-        numBanks: header.num_banks,
+        numChannels: toCount(header.max_channel_id),
+        numRanks: toCount(header.max_rank_id),
+        numBankgroups: toCount(header.max_bankgroup_id),
+        numBanks: toCount(header.max_bank_id),
       };
     },
 
@@ -97,7 +102,8 @@ export const useSessionStore = defineStore('session', {
 
     createCommandConfigFromDictionary(dictionary: Dictionary): CommandConfig {
       const colors: Record<number, string> = {};
-      const clockPeriods: Record<number, number | undefined> = {};
+      const commandBusLatencies: Record<number, number | undefined> = {};
+      const dataBusLatencies: Record<number, number | undefined> = {};
 
       const sortedIds = Object.keys(dictionary.commands)
         .map(Number)
@@ -105,11 +111,13 @@ export const useSessionStore = defineStore('session', {
 
       sortedIds.forEach((id, index) => {
         colors[id] = COLORS[index % COLORS.length] ?? '#CCCCCC';
-        const latency = dictionary.latencies[id];
-        clockPeriods[id] = latency !== undefined && latency >= 0 ? latency : undefined;
+        const commandLatency = dictionary.command_bus_latencies[id];
+        const dataLatency = dictionary.data_bus_latencies[id];
+        commandBusLatencies[id] = commandLatency !== undefined && commandLatency >= 0 ? commandLatency : undefined;
+        dataBusLatencies[id] = dataLatency !== undefined && dataLatency >= 0 ? dataLatency : undefined;
       });
 
-      return { colors, clockPeriods };
+      return { colors, commandBusLatencies, dataBusLatencies };
     },
   },
 });

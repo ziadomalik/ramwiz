@@ -38,10 +38,36 @@ export class SwimlanesRenderer {
     const numBuses = 2;
     const ranksPerBus = numRanks * numBankgroups * numBanks;
     const banksPerRank = numBankgroups * numBanks;
+    const firstBusYOffsetByChannel = new Map<number, number>();
+
+    // Measure actual channel->first-bus vertical delta from rendered rows.
+    // This avoids hardcoded assumptions about row height/border spacing.
+    for (let i = 0; i < rowLayout.length; i++) {
+      const row = rowLayout[i]!;
+      if (row.channel === undefined || row.bus !== undefined) continue;
+
+      const channelCenter = row.top + row.height / 2;
+      for (let j = i + 1; j < rowLayout.length; j++) {
+        const candidate = rowLayout[j]!;
+        if (candidate.channel !== row.channel) break;
+        if (candidate.bus === undefined) continue;
+
+        const busCenter = candidate.top + candidate.height / 2;
+        firstBusYOffsetByChannel.set(row.channel, busCenter - channelCenter);
+        break;
+      }
+    }
 
     for (const row of rowLayout) {
       if (row.channel === undefined) continue;
-      const yCenter = (row.top + row.height / 2) - canvasRect.top;
+      let yCenter = (row.top + row.height / 2) - canvasRect.top;
+
+      // Channel rows are container headers. If a channel is collapsed, map its
+      // events to the first child lane position to keep merged events inside
+      // the drawable timeline area (below top rulers).
+      if (row.bus === undefined) {
+        yCenter += firstBusYOffsetByChannel.get(row.channel) ?? row.height;
+      }
 
       // Determine the hierarchy ranges this row covers.
       // Omitted dimensions imply "all children".

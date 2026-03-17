@@ -709,15 +709,14 @@ export class TraceRenderer {
     }
 
     // Build command/data bus timing metadata once per config refresh.
-    const ncl = sessionStore.header?.ncl ?? 0;
-    const ncwl = sessionStore.header?.ncwl ?? 0;
     const commandNames = sessionStore.dictionary?.commands ?? {};
     this.commandTimings = Array.from({ length: MAX_COMMANDS }, (_, id) =>
       this.buildCommandTiming(
         commandNames[id] ?? '',
-        config.clockPeriods[id] ?? 1,
-        ncl,
-        ncwl,
+        config.commandBusLatencies[id],
+        config.dataBusLatencies[id],
+        sessionStore.header?.ncl ?? 0,
+        sessionStore.header?.ncwl ?? 0,
       )
     );
 
@@ -734,38 +733,47 @@ export class TraceRenderer {
 
   private buildCommandTiming(
     commandName: string,
-    configuredDuration: number | undefined,
+    configuredCommandDuration: number | undefined,
+    configuredDataDuration: number | undefined,
     ncl: number,
     ncwl: number
   ): CommandTiming {
     const normalized = commandName.toUpperCase();
     const isRead = this.isReadCommand(normalized);
     const isWrite = this.isWriteCommand(normalized);
-    const dataDuration = configuredDuration && configuredDuration > 0 ? configuredDuration : 1;
+    const commandDuration =
+      configuredCommandDuration !== undefined && configuredCommandDuration > 0
+        ? configuredCommandDuration
+        : 1;
+    const dataDuration =
+      configuredDataDuration !== undefined && configuredDataDuration > 0
+        ? configuredDataDuration
+        : 1;
+    const hasDataPhase = configuredDataDuration !== undefined && configuredDataDuration > 0;
 
     if (isRead) {
       return {
-        commandDuration: 1,
+        commandDuration,
         dataDuration,
         dataDelay: Math.max(ncl, 0),
-        emitsData: true,
+        emitsData: hasDataPhase,
       };
     }
 
     if (isWrite) {
       return {
-        commandDuration: 1,
+        commandDuration,
         dataDuration,
         dataDelay: Math.max(ncwl, 0),
-        emitsData: true,
+        emitsData: hasDataPhase,
       };
     }
 
     return {
-      commandDuration: 1,
+      commandDuration,
       dataDuration,
       dataDelay: 0,
-      emitsData: false,
+      emitsData: hasDataPhase,
     };
   }
 
@@ -855,6 +863,11 @@ export class TraceRenderer {
     this.glowStartTimeMs = performance.now();
   }
 
+  clearLinkedGlow(): void {
+    this.glowActiveInstances = 0;
+    this.glowStartTimeMs = 0;
+  }
+
   private findCounterpartIndex(lod: LODLevel, sourceIdx: number, linkId: number): number {
     if (linkId === 0) return -1;
 
@@ -915,7 +928,7 @@ export class TraceRenderer {
       const column = data.columns[i] ?? -1;
       const linkId = (baseEntryIndex + i + 1) >>> 0;
 
-      // Command bus event (JEDEC command/address bus timing): always 1 tCK.
+      // Command bus event width is defined by the dictionary's command-bus latency.
       starts[writeIdx] = start;
       durations[writeIdx] = timing.commandDuration;
       cmds[writeIdx] = cmdId;

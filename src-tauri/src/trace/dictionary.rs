@@ -4,13 +4,13 @@
 /// The 'command id' referenced everywhere else refers to the index of the command in the dictionary.
 ///
 ///  Layout:
-/// +-------------+---------------+-------------+
-/// | Length (1B) | String Bytes  | Latency (4B)| <- Has command id 0
-/// +-------------+---------------+-------------+
-/// | Length (1B) | String Bytes  | Latency (4B)| <- Has command id 1
-/// +-------------+---------------+-------------+
-/// | ...         | ...           | <- Has command id 2, 3, ...
-/// +-------------+---------------+-------------+
+/// +-------------+---------------+----------------------+----------------------+
+/// | Length (1B) | String Bytes  | Cmd Bus Latency (4B) | Data Bus Latency (4B)|
+/// +-------------+---------------+----------------------+----------------------+
+/// | Length (1B) | String Bytes  | Cmd Bus Latency (4B) | Data Bus Latency (4B)|
+/// +-------------+---------------+----------------------+----------------------+
+/// | ...         | ...           | ...                  | ...                  |
+/// +-------------+---------------+----------------------+----------------------+
 ///  
 /// ----
 /// Author: Ziad Malik
@@ -25,7 +25,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Dictionary {
     pub commands: std::collections::HashMap<u8, String>,
-    pub latencies: std::collections::HashMap<u8, i32>,
+    pub command_bus_latencies: std::collections::HashMap<u8, i32>,
+    pub data_bus_latencies: std::collections::HashMap<u8, i32>,
 }
 
 #[derive(Debug)]
@@ -67,8 +68,25 @@ pub fn parse(
         return Err(DictionaryError::OffsetOutOfBounds);
     }
 
+    // New format: [len][string][cmd_latency][data_latency]
+    if let Ok(parsed) = parse_with_layout(data, offset, num_commands, true) {
+        return Ok(parsed);
+    }
+
+    // Backward compatibility for older files:
+    // [len][string][latency], where one latency applies to both buses.
+    parse_with_layout(data, offset, num_commands, false)
+}
+
+fn parse_with_layout(
+    data: &[u8],
+    offset: usize,
+    num_commands: u8,
+    has_data_bus_latency: bool,
+) -> Result<Dictionary, DictionaryError> {
     let mut commands = std::collections::HashMap::with_capacity(num_commands as usize);
-    let mut latencies = std::collections::HashMap::with_capacity(num_commands as usize);
+    let mut command_bus_latencies = std::collections::HashMap::with_capacity(num_commands as usize);
+    let mut data_bus_latencies = std::collections::HashMap::with_capacity(num_commands as usize);
     let mut pos = offset;
 
     for cmd_id in 0..num_commands {
@@ -94,15 +112,28 @@ pub fn parse(
 
         let mut latency_bytes = [0u8; std::mem::size_of::<i32>()];
         latency_bytes.copy_from_slice(&data[pos..pos + std::mem::size_of::<i32>()]);
-        let latency = i32::from_le_bytes(latency_bytes);
+        let command_latency = i32::from_le_bytes(latency_bytes);
         pos += std::mem::size_of::<i32>();
 
+        let data_latency = if has_data_bus_latency {
+            if pos + std::mem::size_of::<i32>() > data.len() {
+                return Err(DictionaryError::OffsetOutOfBounds);
+            }
+            latency_bytes.copy_from_slice(&data[pos..pos + std::mem::size_of::<i32>()]);
+            pos += std::mem::size_of::<i32>();
+            i32::from_le_bytes(latency_bytes)
+        } else {
+            command_latency
+        };
+
         commands.insert(cmd_id, name);
-        latencies.insert(cmd_id, latency);
+        command_bus_latencies.insert(cmd_id, command_latency);
+        data_bus_latencies.insert(cmd_id, data_latency);
     }
 
     Ok(Dictionary {
         commands,
-        latencies,
+        command_bus_latencies,
+        data_bus_latencies,
     })
 }

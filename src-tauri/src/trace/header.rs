@@ -3,22 +3,22 @@
 ///  Layout:
 ///  The header has a fixed width of 40 bytes.
 ///  
-///  +--------------+------+-------------------------------------+
-///  |     Name     | Size |             Description             |
-///  +--------------+------+-------------------------------------+
-///  | magic        | 5B   | "RAM2\0" (null-terminated)          |
-///  | version      | 1B   | Major version of the file format    |
-///  | num_commands | 1B   | Number of unique command strings    |
-///  | reserved     | 1B   | Padding to align next field to 8B   |
-///  | num_entries  | 8B   | Number of entries / trace events    |
-///  | dict_offset  | 8B   | Byte offset where dictionary starts |
-///  | ncl          | 4B   | nCL in cycles (RD cmd->data delay)  |
-///  | ncwl         | 4B   | nCWL in cycles (WR cmd->data delay) |
-///  | num_channels | 2B   | Number of channels                  |
-///  | num_ranks    | 2B   | Number of ranks                     |
-///  | num_bankgroups | 2B | Number of bankgroups per channel    |
-///  | num_banks    | 2B   | Number of banks per bankgroup       |
-///  +--------------+------+-------------------------------------+
+///  +---------------------+------+-----------------------------------------------+
+///  |        Name         | Size |                 Description                   |
+///  +---------------------+------+-----------------------------------------------+
+///  | magic               | 5B   | "RAM2\0" (null-terminated)                    |
+///  | version             | 1B   | Major version of the file format              |
+///  | num_commands        | 1B   | Number of unique command strings              |
+///  | reserved            | 1B   | Padding to align next field to 8B             |
+///  | num_entries         | 8B   | Number of entries / trace events              |
+///  | dict_offset         | 8B   | Byte offset where dictionary starts           |
+///  | ncl                 | 4B   | nCL in cycles (RD cmd->data delay)            |
+///  | ncwl                | 4B   | nCWL in cycles (WR cmd->data delay)           |
+///  | max_channel_id      | 2B   | Maximum channel ID in the trace               |
+///  | max_rank_id         | 2B   | Maximum rank ID in the trace                  |
+///  | max_bankgroup_id    | 2B   | Maximum bankgroup ID in the trace             |
+///  | max_bank_id         | 2B   | Maximum bank ID in the trace                  |
+///  +---------------------+------+-----------------------------------------------+
 ///  
 /// ----
 /// Author: Ziad Malik
@@ -39,7 +39,7 @@ use crate::trace::serialize::{
     serialize_leu64,
 };
 
-const SUPPORTED_VERSION: u8 = 3;
+const SUPPORTED_VERSIONS: [u8; 2] = [3, 4];
 const MAGIC: [u8; 5] = *b"RAM2\0";
 
 #[derive(
@@ -75,22 +75,22 @@ pub struct Header {
         serialize_with = "serialize_lei16",
         deserialize_with = "deserialize_lei16"
     )]
-    pub num_channels: LeI16,
+    pub max_channel_id: LeI16,
     #[serde(
         serialize_with = "serialize_lei16",
         deserialize_with = "deserialize_lei16"
     )]
-    pub num_ranks: LeI16,
+    pub max_rank_id: LeI16,
     #[serde(
         serialize_with = "serialize_lei16",
         deserialize_with = "deserialize_lei16"
     )]
-    pub num_bankgroups: LeI16,
+    pub max_bankgroup_id: LeI16,
     #[serde(
         serialize_with = "serialize_lei16",
         deserialize_with = "deserialize_lei16"
     )]
-    pub num_banks: LeI16,
+    pub max_bank_id: LeI16,
 }
 
 impl Header {
@@ -111,7 +111,7 @@ impl Header {
     }
 
     pub fn is_supported_version(&self) -> bool {
-        self.version == SUPPORTED_VERSION
+        SUPPORTED_VERSIONS.contains(&self.version)
     }
 }
 
