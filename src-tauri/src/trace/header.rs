@@ -39,7 +39,7 @@ use crate::trace::serialize::{
     serialize_leu64,
 };
 
-const SUPPORTED_VERSIONS: [u8; 2] = [3, 4];
+const SUPPORTED_VERSIONS: [u8; 3] = [3, 4, 5];
 const MAGIC: [u8; 5] = *b"RAM2\0";
 
 #[derive(
